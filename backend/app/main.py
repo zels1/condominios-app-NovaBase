@@ -55,3 +55,25 @@ def on_startup():
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE fraction_owners ALTER COLUMN user_id DROP NOT NULL"))
         conn.execute(text("ALTER TABLE fraction_owners ADD COLUMN IF NOT EXISTS invited_email VARCHAR"))
+
+        # Ficha completa do condómino (users)
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS nif VARCHAR"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS correspondence_address VARCHAR"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS iban VARCHAR"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS notes TEXT"))
+
+        # Seguro da fração (fractions)
+        conn.execute(text("ALTER TABLE fractions ADD COLUMN IF NOT EXISTS insurance_company VARCHAR"))
+        conn.execute(text("ALTER TABLE fractions ADD COLUMN IF NOT EXISTS insurance_policy_number VARCHAR"))
+        conn.execute(text("ALTER TABLE fractions ADD COLUMN IF NOT EXISTS insurance_valid_until DATE"))
+
+        # Ficha completa do condomínio (condominiums)
+        conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS district VARCHAR"))
+        conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS municipality VARCHAR"))
+        conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS construction_year INTEGER"))
+        conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS registry_number VARCHAR"))
+        conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS insurance_company VARCHAR"))
+        conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS insurance_policy_number VARCHAR"))
+        conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS insurance_valid_until DATE"))
+        conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS external_management_name VARCHAR"))
+        conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS external_management_contact VARCHAR"))
