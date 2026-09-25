@@ -5,6 +5,7 @@ import { useCondo } from '../lib/CondoContext'
 const ADMIN_LINKS = [
   { to: '/', label: 'Resumo', end: true },
   { to: '/fracoes', label: 'Frações' },
+  { to: '/condominos', label: 'Condóminos' },
   { to: '/quotas', label: 'Orçamento e Quotas' },
   { to: '/juros', label: 'Juros de mora' },
   { to: '/lembretes', label: 'Lembretes' },
