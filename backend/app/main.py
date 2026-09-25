@@ -2,6 +2,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from .database import engine
 from .models import Base
@@ -48,3 +49,9 @@ def on_startup():
     # Cria as tabelas que ainda não existam. Em produção prefira Alembic para
     # migrações controladas; isto é apenas uma rede de segurança para o arranque.
     Base.metadata.create_all(bind=engine)
+
+    # Pequenos ajustes de esquema em tabelas já existentes (create_all não altera
+    # colunas de tabelas que já existem). Tudo aqui é seguro para correr repetidamente.
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE fraction_owners ALTER COLUMN user_id DROP NOT NULL"))
+        conn.execute(text("ALTER TABLE fraction_owners ADD COLUMN IF NOT EXISTS invited_email VARCHAR"))
