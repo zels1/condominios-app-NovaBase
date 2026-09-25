@@ -1,1 +1,0 @@
-# condominios-app-NovaBase
