@@ -6,7 +6,7 @@ export default function AdminOwners() {
   const { selectedCondo } = useCondo()
   const [owners, setOwners] = useState([])
   const [editing, setEditing] = useState(null) // id do condómino a editar
-  const [form, setForm] = useState({ full_name: '', phone: '', is_active: true })
+  const [form, setForm] = useState({ full_name: '', phone: '', is_active: true, nif: '', correspondence_address: '', iban: '', notes: '' })
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
 
@@ -18,7 +18,15 @@ export default function AdminOwners() {
 
   function startEdit(o) {
     setEditing(o.id)
-    setForm({ full_name: o.full_name, phone: o.phone || '', is_active: o.is_active })
+    setForm({
+      full_name: o.full_name,
+      phone: o.phone || '',
+      is_active: o.is_active,
+      nif: o.nif || '',
+      correspondence_address: o.correspondence_address || '',
+      iban: o.iban || '',
+      notes: o.notes || '',
+    })
     setError(null)
   }
 
@@ -62,6 +70,24 @@ export default function AdminOwners() {
                     <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="912 345 678" />
                   </div>
                 </div>
+                <div className="row">
+                  <div className="field" style={{ width: 180 }}>
+                    <label>NIF</label>
+                    <input value={form.nif} onChange={(e) => setForm({ ...form, nif: e.target.value })} placeholder="123456789" />
+                  </div>
+                  <div className="field" style={{ width: 220 }}>
+                    <label>IBAN (para reembolsos)</label>
+                    <input value={form.iban} onChange={(e) => setForm({ ...form, iban: e.target.value })} placeholder="PT50 ..." />
+                  </div>
+                </div>
+                <div className="field">
+                  <label>Morada de correspondência (se diferente da fração)</label>
+                  <input value={form.correspondence_address} onChange={(e) => setForm({ ...form, correspondence_address: e.target.value })} />
+                </div>
+                <div className="field">
+                  <label>Notas / observações</label>
+                  <textarea rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+                </div>
                 <label className="row" style={{ gap: '.5em', fontWeight: 600, fontSize: '.9rem' }}>
                   <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
                   Conta ativa (desmarca para bloquear o acesso deste condómino à aplicação)
@@ -80,6 +106,17 @@ export default function AdminOwners() {
                     {!o.is_pending && !o.is_active && <span className="badge danger">conta desativada</span>}
                   </h3>
                   {!o.is_pending && <p className="hint" style={{ margin: '.2em 0' }}>{o.email}{o.phone ? ` · ${o.phone}` : ''}</p>}
+                  {!o.is_pending && (o.nif || o.iban) && (
+                    <p className="hint" style={{ margin: '.2em 0' }}>
+                      {o.nif ? `NIF: ${o.nif}` : ''}{o.nif && o.iban ? ' · ' : ''}{o.iban ? `IBAN: ${o.iban}` : ''}
+                    </p>
+                  )}
+                  {!o.is_pending && o.correspondence_address && (
+                    <p className="hint" style={{ margin: '.2em 0' }}>Correspondência: {o.correspondence_address}</p>
+                  )}
+                  {!o.is_pending && o.notes && (
+                    <p className="hint" style={{ margin: '.2em 0' }}>Notas: {o.notes}</p>
+                  )}
                   <div className="row" style={{ gap: '.4rem', flexWrap: 'wrap', marginTop: '.4rem' }}>
                     {o.fractions.map((f) => (
                       <span key={f.id} className="badge">
