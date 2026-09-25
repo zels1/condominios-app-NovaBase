@@ -2,16 +2,19 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { useCondo } from '../lib/CondoContext'
 import { QuotaStatusBadge } from '../components/StatusBadge'
+import ExpenseChart from '../components/ExpenseChart'
 
 function money(v) { return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(v || 0) }
 
 export default function OwnerHome() {
   const { selectedCondo } = useCondo()
   const [quotas, setQuotas] = useState([])
+  const [expenses, setExpenses] = useState([])
 
   useEffect(() => {
     if (!selectedCondo) return
     api.get(`/condominiums/${selectedCondo.id}/quotas`).then(setQuotas)
+    api.get(`/condominiums/${selectedCondo.id}/expenses`).then(setExpenses)
   }, [selectedCondo])
 
   if (!selectedCondo) {
@@ -27,6 +30,11 @@ export default function OwnerHome() {
       <div className="card stat">
         <span className="label">Total em dívida</span>
         <span className="value" style={{ color: totalDue > 0 ? 'var(--danger)' : 'var(--primary)' }}>{money(totalDue)}</span>
+      </div>
+
+      <div className="card">
+        <h3>Para onde vai o meu dinheiro</h3>
+        <ExpenseChart expenses={expenses} />
       </div>
 
       <div className="card">
