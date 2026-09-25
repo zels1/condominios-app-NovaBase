@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import AdminSetup from './pages/AdminSetup'
 import AdminDashboard from './pages/AdminDashboard'
 import AdminFractions from './pages/AdminFractions'
+import AdminOwners from './pages/AdminOwners'
 import AdminBudgetsQuotas from './pages/AdminBudgetsQuotas'
 import AdminLateFees from './pages/AdminLateFees'
 import AdminReminders from './pages/AdminReminders'
@@ -37,6 +38,7 @@ export default function App() {
             <Route element={<Layout />}>
               <Route path="/" element={<RoleHome />} />
               <Route path="/fracoes" element={<AdminFractions />} />
+              <Route path="/condominos" element={<AdminOwners />} />
               <Route path="/quotas" element={<AdminBudgetsQuotas />} />
               <Route path="/juros" element={<AdminLateFees />} />
               <Route path="/lembretes" element={<AdminReminders />} />
