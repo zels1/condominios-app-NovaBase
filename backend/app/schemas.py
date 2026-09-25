@@ -63,7 +63,11 @@ class FractionOut(ORMBase):
 
 
 class FractionOwnerCreate(BaseModel):
-    user_id: str
+    # Indica user_id (se já souberes o id) OU email (recomendado — convida mesmo que
+    # a pessoa ainda não tenha criado conta; a associação completa-se sozinha quando
+    # ela se registar com esse email).
+    user_id: Optional[str] = None
+    email: Optional[EmailStr] = None
     ownership_share: float = 1.0
     is_primary_contact: bool = True
 
@@ -71,7 +75,8 @@ class FractionOwnerCreate(BaseModel):
 class FractionOwnerOut(ORMBase):
     id: str
     fraction_id: str
-    user_id: str
+    user_id: Optional[str] = None
+    invited_email: Optional[str] = None
     ownership_share: float
     is_primary_contact: bool
     user: Optional[UserOut] = None
@@ -254,6 +259,13 @@ class OccurrenceUpdateCreate(BaseModel):
     note: Optional[str] = None
 
 
+class OccurrenceUpdateOut(ORMBase):
+    id: str
+    status: str
+    note: Optional[str] = None
+    created_at: datetime
+
+
 class OccurrenceOut(ORMBase):
     id: str
     condominium_id: str
@@ -265,6 +277,7 @@ class OccurrenceOut(ORMBase):
     status: str
     priority: str
     created_at: datetime
+    updates: List[OccurrenceUpdateOut] = []
 
 
 # ---------- Assembly / Proxy / Vote ----------
