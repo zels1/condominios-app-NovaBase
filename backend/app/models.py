@@ -105,6 +105,9 @@ class FractionOwner(Base):
     start_date = Column(Date, default=date.today)
     end_date = Column(Date, nullable=True)  # preenchido quando vende a fração
 
+    fraction = relationship("Fraction", back_populates="owners")
+    user = relationship("User", back_populates="owner_links")
+
 
 # ---------------------------------------------------------------------------
 # Orçamento e Quotas
