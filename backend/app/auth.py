@@ -8,6 +8,7 @@ projeto Supabase) e mapeamos para o nosso User local, que guarda o role
 """
 import os
 import jwt
+from jwt import PyJWKClient
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -16,18 +17,41 @@ from . import models
 from .database import get_db
 
 SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 
 security = HTTPBearer()
+
+# Projetos Supabase mais recentes assinam os tokens com chaves assimétricas
+# (ES256/RS256), publicadas no endpoint JWKS do projeto, em vez do esquema
+# antigo (segredo partilhado HS256). Suportamos os dois: se o token vier
+# assinado com HS256 usamos o segredo; caso contrário vamos buscar a chave
+# pública certa ao JWKS do Supabase.
+_jwks_client = PyJWKClient(SUPABASE_URL.rstrip("/") + "/auth/v1/.well-known/jwks.json") if SUPABASE_URL else None
 
 
 def decode_supabase_token(token: str) -> dict:
     try:
-        payload = jwt.decode(
-            token,
-            SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
+        alg = jwt.get_unverified_header(token).get("alg", "HS256")
+        if alg == "HS256":
+            payload = jwt.decode(
+                token,
+                SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                audience="authenticated",
+            )
+        else:
+            if not _jwks_client:
+                raise HTTPException(
+                    status_code=500,
+                    detail="SUPABASE_URL não configurado no servidor (necessário para validar tokens assinados com chaves assimétricas).",
+                )
+            signing_key = _jwks_client.get_signing_key_from_jwt(token)
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=[alg],
+                audience="authenticated",
+            )
         return payload
     except jwt.PyJWTError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Token inválido: {e}")
