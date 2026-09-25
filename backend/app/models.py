@@ -40,6 +40,11 @@ class User(Base):
     # Supabase Auth trata da password; guardamos aqui o supabase_user_id de referência
     supabase_user_id = Column(String, unique=True, nullable=True)
     is_active = Column(Boolean, default=True)
+    # Ficha completa do condómino
+    nif = Column(String, nullable=True)
+    correspondence_address = Column(String, nullable=True)
+    iban = Column(String, nullable=True)  # IBAN para reembolsos
+    notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     owner_links = relationship("FractionOwner", back_populates="user")
@@ -59,6 +64,16 @@ class Condominium(Base):
     city = Column(String)
     admin_user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
     iban = Column(String)  # conta do condomínio, para referência em recibos
+    # Ficha completa do condomínio
+    district = Column(String, nullable=True)
+    municipality = Column(String, nullable=True)
+    construction_year = Column(Integer, nullable=True)
+    registry_number = Column(String, nullable=True)  # nº de registo predial
+    insurance_company = Column(String, nullable=True)  # seguro do edifício
+    insurance_policy_number = Column(String, nullable=True)
+    insurance_valid_until = Column(Date, nullable=True)
+    external_management_name = Column(String, nullable=True)  # administração externa
+    external_management_contact = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     fractions = relationship("Fraction", back_populates="condominium", cascade="all, delete-orphan")
@@ -78,6 +93,10 @@ class Fraction(Base):
     permilagem = Column(Numeric(7, 3), nullable=False)  # soma das frações de um condomínio = 1000.000
     fraction_type = Column(String, default="habitação")  # habitação, comércio, garagem, arrumos
     is_active = Column(Boolean, default=True)
+    # Seguro próprio da fração
+    insurance_company = Column(String, nullable=True)
+    insurance_policy_number = Column(String, nullable=True)
+    insurance_valid_until = Column(Date, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     condominium = relationship("Condominium", back_populates="fractions")
