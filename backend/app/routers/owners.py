@@ -57,6 +57,10 @@ def list_owners_directory(
             phone=data["user"].phone,
             is_active=data["user"].is_active,
             is_pending=False,
+            nif=data["user"].nif,
+            correspondence_address=data["user"].correspondence_address,
+            iban=data["user"].iban,
+            notes=data["user"].notes,
             fractions=data["fractions"],
         )
         for data in by_user.values()
