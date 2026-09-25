@@ -16,6 +16,10 @@ class UserOut(ORMBase):
     phone: Optional[str] = None
     role: str
     is_active: bool
+    nif: Optional[str] = None
+    correspondence_address: Optional[str] = None
+    iban: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class UserCreate(BaseModel):
@@ -29,6 +33,10 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
     is_active: Optional[bool] = None
+    nif: Optional[str] = None
+    correspondence_address: Optional[str] = None
+    iban: Optional[str] = None
+    notes: Optional[str] = None
 
 
 # ---------- Condominium ----------
@@ -38,7 +46,16 @@ class CondominiumCreate(BaseModel):
     address: Optional[str] = None
     postal_code: Optional[str] = None
     city: Optional[str] = None
+    district: Optional[str] = None
+    municipality: Optional[str] = None
     iban: Optional[str] = None
+    construction_year: Optional[int] = None
+    registry_number: Optional[str] = None
+    insurance_company: Optional[str] = None
+    insurance_policy_number: Optional[str] = None
+    insurance_valid_until: Optional[date] = None
+    external_management_name: Optional[str] = None
+    external_management_contact: Optional[str] = None
 
 
 class CondominiumOut(ORMBase):
@@ -48,7 +65,16 @@ class CondominiumOut(ORMBase):
     address: Optional[str] = None
     postal_code: Optional[str] = None
     city: Optional[str] = None
+    district: Optional[str] = None
+    municipality: Optional[str] = None
     iban: Optional[str] = None
+    construction_year: Optional[int] = None
+    registry_number: Optional[str] = None
+    insurance_company: Optional[str] = None
+    insurance_policy_number: Optional[str] = None
+    insurance_valid_until: Optional[date] = None
+    external_management_name: Optional[str] = None
+    external_management_contact: Optional[str] = None
     created_at: datetime
 
 
@@ -57,6 +83,9 @@ class FractionCreate(BaseModel):
     identifier: str
     permilagem: float = Field(gt=0)
     fraction_type: str = "habitação"
+    insurance_company: Optional[str] = None
+    insurance_policy_number: Optional[str] = None
+    insurance_valid_until: Optional[date] = None
 
 
 class FractionOut(ORMBase):
@@ -66,6 +95,9 @@ class FractionOut(ORMBase):
     permilagem: float
     fraction_type: str
     is_active: bool
+    insurance_company: Optional[str] = None
+    insurance_policy_number: Optional[str] = None
+    insurance_valid_until: Optional[date] = None
 
 
 class FractionOwnerCreate(BaseModel):
@@ -104,6 +136,10 @@ class OwnerDirectoryEntry(BaseModel):
     phone: Optional[str] = None
     is_active: bool = True
     is_pending: bool = False
+    nif: Optional[str] = None
+    correspondence_address: Optional[str] = None
+    iban: Optional[str] = None
+    notes: Optional[str] = None
     fractions: List[OwnerFractionLink] = []
 
 
