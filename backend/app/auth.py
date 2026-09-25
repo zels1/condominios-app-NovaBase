@@ -78,6 +78,20 @@ def get_current_user(
         db.add(user)
         db.commit()
         db.refresh(user)
+
+        # Liga automaticamente quaisquer convites de fração pendentes feitos para este email
+        # (um admin pode ter associado esta pessoa a uma fração antes de ela ter conta).
+        if email:
+            pending = (
+                db.query(models.FractionOwner)
+                .filter(models.FractionOwner.invited_email == email, models.FractionOwner.user_id.is_(None))
+                .all()
+            )
+            if pending:
+                for link in pending:
+                    link.user_id = user.id
+                    link.invited_email = None
+                db.commit()
     return user
 
 
