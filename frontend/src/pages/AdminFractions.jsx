@@ -100,11 +100,26 @@ export default function AdminFractions() {
 
 function FractionRow({ fraction, condoId, expanded, onToggle, onRemove, onChanged }) {
   const [owners, setOwners] = useState([])
-  const [newOwnerId, setNewOwnerId] = useState('')
+  const [newOwnerEmail, setNewOwnerEmail] = useState('')
+  const [inviteError, setInviteError] = useState(null)
+  const [inviteBusy, setInviteBusy] = useState(false)
 
   useEffect(() => {
     if (expanded) api.get(`/condominiums/${condoId}/fractions/${fraction.id}/owners`).then(setOwners)
   }, [expanded])
+
+  async function handleInvite() {
+    if (!newOwnerEmail) return
+    setInviteBusy(true)
+    setInviteError(null)
+    try {
+      await api.post(`/condominiums/${condoId}/fractions/${fraction.id}/owners`, { email: newOwnerEmail, ownership_share: 1, is_primary_contact: true })
+      setNewOwnerEmail('')
+      api.get(`/condominiums/${condoId}/fractions/${fraction.id}/owners`).then(setOwners)
+      onChanged()
+    } catch (err) { setInviteError(err.message) }
+    setInviteBusy(false)
+  }
 
   return (
     <>
@@ -123,23 +138,22 @@ function FractionRow({ fraction, condoId, expanded, onToggle, onRemove, onChange
             <div className="stack" style={{ padding: '.6rem 0' }}>
               {owners.map((o) => (
                 <div key={o.id} className="row between">
-                  <span>{o.user?.full_name || o.user_id} {o.is_primary_contact && <span className="badge ok">contacto principal</span>}</span>
+                  <span>
+                    {o.user?.full_name || o.invited_email}{' '}
+                    {o.is_primary_contact && <span className="badge ok">contacto principal</span>}{' '}
+                    {!o.user_id && <span className="badge warn">convite pendente</span>}
+                  </span>
                 </div>
               ))}
               {owners.length === 0 && <p style={{ color: 'var(--text-muted)' }}>Sem proprietário associado ainda.</p>}
-              <p style={{ fontSize: '.85rem', color: 'var(--text-muted)' }}>
-                Para associar um proprietário, ele deve primeiro criar conta na aplicação; depois usa o ID de utilizador dele
-                (visível para o admin via API <code>/me</code> do próprio, ou partilha o email para procurares).
+              <p className="hint">
+                Basta o email — se a pessoa ainda não tiver conta, fica como "convite pendente" e liga-se
+                sozinha assim que ela criar a conta com esse mesmo email.
               </p>
+              {inviteError && <div className="msg error">{inviteError}</div>}
               <div className="row">
-                <input placeholder="ID do utilizador" value={newOwnerId} onChange={(e) => setNewOwnerId(e.target.value)} style={{ flex: 1, padding: '.5em', borderRadius: 8, border: '1px solid var(--border)' }} />
-                <button className="btn small" onClick={async () => {
-                  if (!newOwnerId) return
-                  await api.post(`/condominiums/${condoId}/fractions/${fraction.id}/owners`, { user_id: newOwnerId, ownership_share: 1, is_primary_contact: true })
-                  setNewOwnerId('')
-                  api.get(`/condominiums/${condoId}/fractions/${fraction.id}/owners`).then(setOwners)
-                  onChanged()
-                }}>Associar</button>
+                <input type="email" placeholder="email@exemplo.pt" value={newOwnerEmail} onChange={(e) => setNewOwnerEmail(e.target.value)} style={{ flex: 1, padding: '.5em', borderRadius: 8, border: '1px solid var(--border)' }} />
+                <button className="btn small" disabled={inviteBusy} onClick={handleInvite}>{inviteBusy ? 'A convidar…' : 'Convidar'}</button>
               </div>
             </div>
           </td>
