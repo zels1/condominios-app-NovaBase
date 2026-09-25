@@ -25,6 +25,12 @@ class UserCreate(BaseModel):
     role: str = "owner"
 
 
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
 # ---------- Condominium ----------
 class CondominiumCreate(BaseModel):
     name: str
@@ -80,6 +86,25 @@ class FractionOwnerOut(ORMBase):
     ownership_share: float
     is_primary_contact: bool
     user: Optional[UserOut] = None
+
+
+# ---------- Diretório de condóminos (ficha do admin) ----------
+class OwnerFractionLink(BaseModel):
+    id: str  # id da associação fraction_owner (para remover/gerir)
+    fraction_id: str
+    fraction_identifier: str
+    ownership_share: float
+    is_primary_contact: bool
+
+
+class OwnerDirectoryEntry(BaseModel):
+    id: str  # id do utilizador, ou "pending-<link_id>" se ainda for só um convite
+    email: str
+    full_name: str
+    phone: Optional[str] = None
+    is_active: bool = True
+    is_pending: bool = False
+    fractions: List[OwnerFractionLink] = []
 
 
 # ---------- Budget ----------
