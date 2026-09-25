@@ -101,15 +101,39 @@ def add_owner(
     db: Session = Depends(get_db),
     user: models.User = Depends(require_condo_admin),
 ):
+    """Associa um condómino a uma fração. Podes indicar o user_id diretamente (se já
+    o souberes) ou, mais simples, o email — se essa pessoa já tiver conta é associada
+    logo; caso contrário fica como convite pendente e liga-se sozinha assim que ela
+    criar conta com esse email."""
     fraction = db.query(models.Fraction).filter(
         models.Fraction.id == fraction_id, models.Fraction.condominium_id == condominium_id
     ).first()
     if not fraction:
         raise HTTPException(404, "Fração não encontrada.")
-    owner_user = db.query(models.User).filter(models.User.id == payload.user_id).first()
-    if not owner_user:
-        raise HTTPException(404, "Utilizador não encontrado.")
-    link = models.FractionOwner(fraction_id=fraction_id, **payload.model_dump())
+
+    if not payload.user_id and not payload.email:
+        raise HTTPException(400, "Indica o email (ou o id) do condómino.")
+
+    owner_user_id = payload.user_id
+    invited_email = None
+    if not owner_user_id:
+        existing = db.query(models.User).filter(models.User.email == payload.email).first()
+        if existing:
+            owner_user_id = existing.id
+        else:
+            invited_email = payload.email
+    else:
+        owner_user = db.query(models.User).filter(models.User.id == owner_user_id).first()
+        if not owner_user:
+            raise HTTPException(404, "Utilizador não encontrado.")
+
+    link = models.FractionOwner(
+        fraction_id=fraction_id,
+        user_id=owner_user_id,
+        invited_email=invited_email,
+        ownership_share=payload.ownership_share,
+        is_primary_contact=payload.is_primary_contact,
+    )
     db.add(link)
     db.commit()
     db.refresh(link)
