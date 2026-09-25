@@ -96,14 +96,14 @@ class FractionOwner(Base):
     __tablename__ = "fraction_owners"
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
     fraction_id = Column(UUID(as_uuid=False), ForeignKey("fractions.id"), nullable=False)
-    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    # user_id fica nulo enquanto o convite está pendente (a pessoa ainda não criou conta).
+    # Quando alguém cria conta com o email de invited_email, o login liga automaticamente.
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
+    invited_email = Column(String, nullable=True)
     ownership_share = Column(Numeric(5, 4), default=1.0)  # 1.0 = único proprietário
     is_primary_contact = Column(Boolean, default=True)  # quem recebe comunicações/quotas
     start_date = Column(Date, default=date.today)
     end_date = Column(Date, nullable=True)  # preenchido quando vende a fração
-
-    fraction = relationship("Fraction", back_populates="owners")
-    user = relationship("User", back_populates="owner_links")
 
 
 # ---------------------------------------------------------------------------
