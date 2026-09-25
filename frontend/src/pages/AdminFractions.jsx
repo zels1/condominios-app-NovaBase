@@ -103,10 +103,36 @@ function FractionRow({ fraction, condoId, expanded, onToggle, onRemove, onChange
   const [newOwnerEmail, setNewOwnerEmail] = useState('')
   const [inviteError, setInviteError] = useState(null)
   const [inviteBusy, setInviteBusy] = useState(false)
+  const [editingInsurance, setEditingInsurance] = useState(false)
+  const [insuranceForm, setInsuranceForm] = useState({
+    insurance_company: fraction.insurance_company || '',
+    insurance_policy_number: fraction.insurance_policy_number || '',
+    insurance_valid_until: fraction.insurance_valid_until || '',
+  })
+  const [insuranceBusy, setInsuranceBusy] = useState(false)
+  const [insuranceError, setInsuranceError] = useState(null)
 
   useEffect(() => {
     if (expanded) api.get(`/condominiums/${condoId}/fractions/${fraction.id}/owners`).then(setOwners)
   }, [expanded])
+
+  async function saveInsurance() {
+    setInsuranceBusy(true)
+    setInsuranceError(null)
+    try {
+      await api.put(`/condominiums/${condoId}/fractions/${fraction.id}`, {
+        identifier: fraction.identifier,
+        permilagem: Number(fraction.permilagem),
+        fraction_type: fraction.fraction_type,
+        insurance_company: insuranceForm.insurance_company || null,
+        insurance_policy_number: insuranceForm.insurance_policy_number || null,
+        insurance_valid_until: insuranceForm.insurance_valid_until || null,
+      })
+      setEditingInsurance(false)
+      onChanged()
+    } catch (err) { setInsuranceError(err.message) }
+    setInsuranceBusy(false)
+  }
 
   async function handleInvite() {
     if (!newOwnerEmail) return
@@ -155,6 +181,43 @@ function FractionRow({ fraction, condoId, expanded, onToggle, onRemove, onChange
                 <input type="email" placeholder="email@exemplo.pt" value={newOwnerEmail} onChange={(e) => setNewOwnerEmail(e.target.value)} style={{ flex: 1, padding: '.5em', borderRadius: 8, border: '1px solid var(--border)' }} />
                 <button className="btn small" disabled={inviteBusy} onClick={handleInvite}>{inviteBusy ? 'A convidar…' : 'Convidar'}</button>
               </div>
+
+              <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '.4rem 0' }} />
+
+              {editingInsurance ? (
+                <div className="stack">
+                  <strong>Seguro da fração</strong>
+                  {insuranceError && <div className="msg error">{insuranceError}</div>}
+                  <div className="row">
+                    <div className="field" style={{ flex: 1 }}>
+                      <label>Seguradora</label>
+                      <input value={insuranceForm.insurance_company} onChange={(e) => setInsuranceForm({ ...insuranceForm, insurance_company: e.target.value })} />
+                    </div>
+                    <div className="field" style={{ flex: 1 }}>
+                      <label>Nº da apólice</label>
+                      <input value={insuranceForm.insurance_policy_number} onChange={(e) => setInsuranceForm({ ...insuranceForm, insurance_policy_number: e.target.value })} />
+                    </div>
+                    <div className="field" style={{ width: 160 }}>
+                      <label>Válido até</label>
+                      <input type="date" value={insuranceForm.insurance_valid_until || ''} onChange={(e) => setInsuranceForm({ ...insuranceForm, insurance_valid_until: e.target.value })} />
+                    </div>
+                  </div>
+                  <div className="row">
+                    <button className="btn small" disabled={insuranceBusy} onClick={saveInsurance}>{insuranceBusy ? 'A guardar…' : 'Guardar seguro'}</button>
+                    <button className="btn secondary small" onClick={() => setEditingInsurance(false)}>Cancelar</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="row between">
+                  <span className="hint">
+                    Seguro da fração:{' '}
+                    {fraction.insurance_company
+                      ? `${fraction.insurance_company}${fraction.insurance_policy_number ? ` (apólice ${fraction.insurance_policy_number})` : ''}${fraction.insurance_valid_until ? ` · válido até ${fraction.insurance_valid_until}` : ''}`
+                      : 'não registado'}
+                  </span>
+                  <button className="btn secondary small" onClick={() => setEditingInsurance(true)}>Editar seguro</button>
+                </div>
+              )}
             </div>
           </td>
         </tr>
