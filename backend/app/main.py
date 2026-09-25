@@ -9,7 +9,7 @@ from .models import Base
 from .routers import (
     condominiums, fractions, budgets, quotas, payments,
     latefees, reminders, suppliers, maintenance, assemblies,
-    documents, dashboard, users,
+    documents, dashboard, users, owners,
 )
 
 app = FastAPI(title="Gestão de Condomínios API", version="1.0.0")
@@ -29,7 +29,7 @@ app.add_middleware(
 for router in (
     condominiums.router, fractions.router, budgets.router, quotas.router, payments.router,
     latefees.router, reminders.router, suppliers.router, maintenance.router, assemblies.router,
-    documents.router, dashboard.router, users.router,
+    documents.router, dashboard.router, users.router, owners.router,
 ):
     app.include_router(router)
 
