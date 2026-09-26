@@ -344,7 +344,7 @@ class OccurrenceOut(ORMBase):
     updates: List[OccurrenceUpdateOut] = []
     fraction_identifier: Optional[str] = None  # None = zona comum
     reported_by_me: bool = False
-    reporter_name: Optional[str] = None  # só preenchido para o administrador
+    reporter_name: Optional[str] = None  # quem publicou (ou "Administração do condomínio")
 
 
 # ---------- Assembly / Proxy / Vote ----------
