@@ -1,4 +1,5 @@
-import { NavLink, Outlet, Navigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useCondo } from '../lib/CondoContext'
 
@@ -26,6 +27,11 @@ const OWNER_LINKS = [
 export default function Layout() {
   const { signOut, user } = useAuth()
   const { me, isAdmin, condominiums, selectedId, setSelectedId, loading, error } = useCondo()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const location = useLocation()
+
+  // No telemóvel, o menu fecha-se sozinho ao mudar de página
+  useEffect(() => { setMenuOpen(false) }, [location.pathname])
 
   if (loading) return <div className="empty">A carregar…</div>
   if (error) return <div className="empty msg error">Erro a carregar dados: {error}</div>
@@ -38,18 +44,30 @@ export default function Layout() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">🏢 Condomínios</div>
+      <aside className={`sidebar${menuOpen ? ' open' : ''}`}>
+        <div className="sidebar-top">
+          <div className="brand">🏢 Condomínios</div>
+          <button
+            type="button"
+            className="menu-toggle"
+            aria-expanded={menuOpen}
+            aria-controls="main-menu"
+            onClick={() => setMenuOpen((o) => !o)}
+          >
+            {menuOpen ? '✕ Fechar' : '☰ Menu'}
+          </button>
+        </div>
         {condominiums.length > 0 && (
           <select
             value={selectedId || ''}
             onChange={(e) => setSelectedId(e.target.value)}
-            style={{ marginBottom: '1rem', padding: '.5em', borderRadius: 8, border: '1px solid var(--border)' }}
+            className="condo-select"
+            aria-label="Condomínio"
           >
             {condominiums.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
-        <nav>
+        <nav id="main-menu">
           {links.map((l) => (
             <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => isActive ? 'active' : ''}>
               {l.label}
@@ -57,7 +75,7 @@ export default function Layout() {
           ))}
           {isAdmin && <NavLink to="/configurar">+ Novo condomínio</NavLink>}
         </nav>
-        <div style={{ marginTop: 'auto', paddingTop: '1rem', fontSize: '.8rem', color: 'var(--text-muted)' }}>
+        <div className="sidebar-footer">
           <div>{me?.full_name || user?.email}</div>
           <div style={{ textTransform: 'capitalize' }}>{me?.role === 'owner' ? 'Condómino' : 'Administrador'}</div>
           <button className="btn secondary small" style={{ marginTop: '.6rem' }} onClick={signOut}>Terminar sessão</button>
