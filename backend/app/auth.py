@@ -12,6 +12,7 @@ from jwt import PyJWKClient
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from . import models
 from .database import get_db
@@ -63,12 +64,27 @@ def get_current_user(
 ) -> models.User:
     payload = decode_supabase_token(credentials.credentials)
     supabase_user_id = payload.get("sub")
-    email = payload.get("email")
+    email = (payload.get("email") or "").strip() or None
 
     user = db.query(models.User).filter(models.User.supabase_user_id == supabase_user_id).first()
-    if not user:
-        # primeiro login: cria o registo local automaticamente como 'owner' por defeito.
-        # Um admin tem de ser promovido manualmente (ou via convite) a role=admin.
+    if user:
+        return user
+
+    # Primeiro login com esta conta do Supabase.
+    # 1) Se já existe um utilizador com este email (ex: condómino registado pelo admin
+    #    antes de criar conta, ou conta do Supabase recriada), liga-se a esse registo
+    #    em vez de criar um duplicado — que falharia por o email ser único.
+    if email:
+        user = (
+            db.query(models.User)
+            .filter(func.lower(models.User.email) == email.lower())
+            .first()
+        )
+    if user:
+        user.supabase_user_id = supabase_user_id
+    else:
+        # 2) Caso contrário cria o registo local como 'owner' por defeito.
+        #    Um admin tem de ser promovido manualmente a role=admin.
         user = models.User(
             email=email,
             full_name=payload.get("user_metadata", {}).get("full_name", email),
@@ -76,22 +92,22 @@ def get_current_user(
             role=models.UserRole.owner,
         )
         db.add(user)
-        db.commit()
-        db.refresh(user)
+    db.commit()
+    db.refresh(user)
 
-        # Liga automaticamente quaisquer convites de fração pendentes feitos para este email
-        # (um admin pode ter associado esta pessoa a uma fração antes de ela ter conta).
-        if email:
-            pending = (
-                db.query(models.FractionOwner)
-                .filter(models.FractionOwner.invited_email == email, models.FractionOwner.user_id.is_(None))
-                .all()
-            )
-            if pending:
-                for link in pending:
-                    link.user_id = user.id
-                    link.invited_email = None
-                db.commit()
+    # Liga automaticamente quaisquer convites de fração pendentes feitos para este email
+    # (um admin pode ter associado esta pessoa a uma fração antes de ela ter conta).
+    if email:
+        pending = (
+            db.query(models.FractionOwner)
+            .filter(func.lower(models.FractionOwner.invited_email) == email.lower(), models.FractionOwner.user_id.is_(None))
+            .all()
+        )
+        if pending:
+            for link in pending:
+                link.user_id = user.id
+                link.invited_email = None
+            db.commit()
     return user
 
 
