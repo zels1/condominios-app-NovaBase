@@ -95,6 +95,13 @@ tr:last-child td { border-bottom: none; }
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
 }
 .sidebar .brand { font-weight: 750; font-size: 1.1rem; margin-bottom: 1rem; color: var(--primary-dark); }
+.sidebar .condo-select { margin-bottom: 1rem; padding: .5em; border-radius: 8px; border: 1px solid var(--border); max-width: 100%; }
+.sidebar-footer { margin-top: auto; padding-top: 1rem; font-size: .8rem; color: var(--text-muted); }
+.menu-toggle {
+  display: none; align-items: center; gap: .3em; padding: .45em .8em; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  font-weight: 600; font-size: .9rem; cursor: pointer;
+}
 .sidebar nav { display: flex; flex-direction: column; gap: .2rem; }
 .sidebar nav a, .sidebar nav button.navlink {
   display: block; text-align: left; padding: .55em .7em; border-radius: 8px; color: var(--text);
@@ -130,8 +137,20 @@ tr:last-child td { border-bottom: none; }
 
 @media (max-width: 780px) {
   .app-shell { flex-direction: column; }
-  .sidebar { width: 100%; height: auto; position: relative; flex-direction: row; align-items: center; overflow-x: auto; padding: .8rem; }
-  .sidebar .brand { margin-bottom: 0; margin-right: .6rem; }
-  .sidebar nav { flex-direction: row; }
+  /* Barra de topo fixa com botão "Menu"; a lista de páginas abre por baixo */
+  .sidebar {
+    width: 100%; height: auto; max-height: 100vh; position: sticky; top: 0; z-index: 20;
+    padding: .6rem 1rem; border-right: none; border-bottom: 1px solid var(--border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .04);
+  }
+  .sidebar-top { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+  .sidebar .brand { margin-bottom: 0; }
+  .menu-toggle { display: inline-flex; }
+  .sidebar .condo-select { width: 100%; margin: .5rem 0 0; }
+  .sidebar nav, .sidebar-footer { display: none; }
+  .sidebar.open { overflow-y: auto; }
+  .sidebar.open nav { display: flex; flex-direction: column; margin-top: .5rem; }
+  .sidebar.open nav a { padding: .75em .8em; font-size: 1rem; }
+  .sidebar.open .sidebar-footer { display: block; margin-top: .5rem; padding: .8rem .8rem .4rem; border-top: 1px solid var(--border); }
   .main { padding: 1.2rem 1rem; }
 }
