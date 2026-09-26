@@ -124,6 +124,38 @@ tr:last-child td { border-bottom: none; }
 }
 .auth-card { width: 100%; max-width: 380px; }
 
+/* Login: mostrar palavra-passe */
+.password-wrap { position: relative; }
+.password-wrap input { width: 100%; padding-right: 5.2em; box-sizing: border-box; }
+.password-toggle {
+  position: absolute; right: .35em; top: 50%; transform: translateY(-50%);
+  border: none; background: none; color: var(--primary-dark); font-weight: 600; font-size: .82rem;
+  padding: .45em .6em; border-radius: 6px; cursor: pointer;
+}
+.password-toggle:hover, .password-toggle:focus-visible { background: var(--primary-soft); }
+.remember { display: flex; align-items: center; gap: .5em; font-size: .88rem; color: var(--text-muted); margin: -.3em 0 .4em; cursor: pointer; }
+.remember input { width: 1.05em; height: 1.05em; accent-color: var(--primary); }
+
+/* Login: contas recentes */
+.recent-accounts { display: flex; flex-direction: column; gap: .35rem; margin-bottom: 1rem; }
+.recent-title { font-size: .8rem; font-weight: 600; color: var(--text-muted); }
+.recent-item { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.recent-item.selected { border-color: var(--primary); background: var(--primary-soft); }
+.recent-pick {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: .6em; padding: .55em .7em;
+  border: none; background: none; cursor: pointer; text-align: left; color: var(--text); font-size: .9rem;
+}
+.recent-avatar {
+  flex-shrink: 0; width: 1.9em; height: 1.9em; border-radius: 50%; display: grid; place-items: center;
+  background: var(--primary); color: #fff; font-weight: 700; font-size: .85rem;
+}
+.recent-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-forget {
+  border: none; background: none; color: var(--text-muted); cursor: pointer; padding: .55em .75em;
+  border-radius: 0 10px 10px 0; font-size: .85rem;
+}
+.recent-forget:hover, .recent-forget:focus-visible { color: var(--danger); background: var(--danger-soft); }
+
 .tabs { display: flex; gap: .3rem; border-bottom: 1px solid var(--border); margin-bottom: 1.2rem; overflow-x: auto; }
 .tabs button {
   padding: .6em 1em; border: none; background: none; cursor: pointer; font-weight: 600; color: var(--text-muted);
