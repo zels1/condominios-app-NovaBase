@@ -19,8 +19,8 @@ function saveRecent(list) {
 }
 
 export default function Login() {
-  const { signInWithPassword, signUp } = useAuth()
-  const [mode, setMode] = useState('signin') // signin | signup
+  const { signInWithPassword, signUp, requestPasswordReset, linkError } = useAuth()
+  const [mode, setMode] = useState('signin') // signin | signup | forgot
   const [recent, setRecent] = useState(loadRecent)
   const [email, setEmail] = useState(() => loadRecent()[0] || '')
   const [password, setPassword] = useState('')
@@ -28,7 +28,7 @@ export default function Login() {
   const [remember, setRemember] = useState(true)
   const passwordRef = useRef(null)
   const [fullName, setFullName] = useState('')
-  const [error, setError] = useState(null)
+  const [error, setError] = useState(linkError)
   const [notice, setNotice] = useState(null)
   const [busy, setBusy] = useState(false)
 
@@ -36,7 +36,13 @@ export default function Login() {
     e.preventDefault()
     setError(null); setNotice(null); setBusy(true)
     try {
-      if (mode === 'signin') {
+      if (mode === 'forgot') {
+        const { error } = await requestPasswordReset(email)
+        if (error) throw error
+        // Não revelamos se o email existe ou não (evita descobrir quem tem conta)
+        setNotice(`Se existir uma conta com ${email.trim()}, vais receber um email com um link para definir uma nova palavra-passe. Verifica também a pasta de spam.`)
+        setMode('signin')
+      } else if (mode === 'signin') {
         const { error } = await signInWithPassword(email, password)
         if (error) throw error
         rememberEmail(email, remember)
@@ -51,6 +57,13 @@ export default function Login() {
     } finally {
       setBusy(false)
     }
+  }
+
+  function switchMode(next) {
+    setMode(next)
+    setError(null)
+    setNotice(null)
+    setPassword('')
   }
 
   function rememberEmail(value, keep) {
@@ -78,7 +91,9 @@ export default function Login() {
       <div className="card auth-card">
         <h1>Gestão de Condomínios</h1>
         <p style={{ color: 'var(--text-muted)' }}>
-          {mode === 'signin' ? 'Inicia sessão para continuar.' : 'Cria a tua conta.'}
+          {mode === 'signin' && 'Inicia sessão para continuar.'}
+          {mode === 'signup' && 'Cria a tua conta.'}
+          {mode === 'forgot' && 'Indica o teu email e enviamos-te um link para definires uma nova palavra-passe.'}
         </p>
 
         {error && <div className="msg error" style={{ marginBottom: '1em' }}>{error}</div>}
@@ -112,8 +127,14 @@ export default function Login() {
             <input type="email" name="email" value={email} onChange={(e) => setEmail(e.target.value)} required
               autoComplete={mode === 'signin' ? 'username' : 'email'} />
           </div>
+          {mode !== 'forgot' && (
           <div className="field">
-            <label>Palavra-passe</label>
+            <div className="label-row">
+              <label>Palavra-passe</label>
+              {mode === 'signin' && (
+                <button type="button" className="link-button small" onClick={() => switchMode('forgot')}>Esqueci-me da palavra-passe</button>
+              )}
+            </div>
             <div className="password-wrap">
               <input ref={passwordRef} type={showPassword ? 'text' : 'password'} name="password" value={password}
                 onChange={(e) => setPassword(e.target.value)} required
@@ -124,6 +145,7 @@ export default function Login() {
               </button>
             </div>
           </div>
+          )}
           {mode === 'signin' && (
             <label className="remember">
               <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
@@ -131,15 +153,15 @@ export default function Login() {
             </label>
           )}
           <button className="btn block" disabled={busy}>
-            {busy ? 'A processar…' : mode === 'signin' ? 'Entrar' : 'Criar conta'}
+            {busy ? 'A processar…' : mode === 'signin' ? 'Entrar' : mode === 'signup' ? 'Criar conta' : 'Enviar link de recuperação'}
           </button>
         </form>
 
         <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '.9rem' }}>
           {mode === 'signin' ? (
-            <>Ainda não tens conta? <button className="navlink" style={{ background: 'none', border: 'none', color: 'var(--primary-dark)', fontWeight: 600, cursor: 'pointer', padding: 0 }} onClick={() => setMode('signup')}>Cria uma</button></>
+            <>Ainda não tens conta? <button type="button" className="link-button" onClick={() => switchMode('signup')}>Cria uma</button></>
           ) : (
-            <>Já tens conta? <button style={{ background: 'none', border: 'none', color: 'var(--primary-dark)', fontWeight: 600, cursor: 'pointer', padding: 0 }} onClick={() => setMode('signin')}>Inicia sessão</button></>
+            <>{mode === 'forgot' ? 'Lembraste-te?' : 'Já tens conta?'} <button type="button" className="link-button" onClick={() => switchMode('signin')}>Inicia sessão</button></>
           )}
         </p>
       </div>

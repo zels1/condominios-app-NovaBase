@@ -42,6 +42,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     # Ficha completa do condómino
     nif = Column(String, nullable=True)
+    landline_phone = Column(String, nullable=True)  # telefone fixo
     correspondence_address = Column(String, nullable=True)
     iban = Column(String, nullable=True)  # IBAN para reembolsos
     notes = Column(Text, nullable=True)

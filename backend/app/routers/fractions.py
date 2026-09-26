@@ -75,6 +75,27 @@ def update_fraction(
     return fraction
 
 
+@router.put("/{fraction_id}/insurance", response_model=schemas.FractionOut)
+def update_fraction_insurance(
+    condominium_id: str,
+    fraction_id: str,
+    payload: schemas.FractionInsuranceUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_condo_admin),
+):
+    """Atualiza só o seguro da fração (usado na ficha do condómino)."""
+    fraction = db.query(models.Fraction).filter(
+        models.Fraction.id == fraction_id, models.Fraction.condominium_id == condominium_id
+    ).first()
+    if not fraction:
+        raise HTTPException(404, "Fração não encontrada.")
+    for k, v in payload.model_dump().items():
+        setattr(fraction, k, (v.strip() or None) if isinstance(v, str) else v)
+    db.commit()
+    db.refresh(fraction)
+    return fraction
+
+
 @router.delete("/{fraction_id}")
 def deactivate_fraction(
     condominium_id: str,

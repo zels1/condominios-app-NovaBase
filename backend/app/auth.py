@@ -138,3 +138,24 @@ def get_user_fraction_ids(db: Session, user: models.User) -> list:
     """Devolve os ids das frações que este utilizador possui (para acesso de condómino)."""
     rows = db.query(models.FractionOwner.fraction_id).filter(models.FractionOwner.user_id == user.id).all()
     return [r[0] for r in rows]
+
+
+def require_condo_member(db: Session, user: models.User, condominium_id: str) -> bool:
+    """Garante que o utilizador pertence a este condomínio: é o admin dele (ou super_admin),
+    ou tem pelo menos uma fração lá. Devolve True se for admin do condomínio."""
+    condo = db.query(models.Condominium).filter(models.Condominium.id == condominium_id).first()
+    if not condo:
+        raise HTTPException(status_code=404, detail="Condomínio não encontrado.")
+    if user.role == models.UserRole.super_admin:
+        return True
+    if user.role == models.UserRole.admin and condo.admin_user_id == user.id:
+        return True
+    has_fraction = (
+        db.query(models.FractionOwner.id)
+        .join(models.Fraction, models.FractionOwner.fraction_id == models.Fraction.id)
+        .filter(models.FractionOwner.user_id == user.id, models.Fraction.condominium_id == condominium_id)
+        .first()
+    )
+    if not has_fraction:
+        raise HTTPException(status_code=403, detail="Não tens nenhuma fração associada a este condomínio.")
+    return False

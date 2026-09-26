@@ -14,6 +14,7 @@ class UserOut(ORMBase):
     email: str
     full_name: str
     phone: Optional[str] = None
+    landline_phone: Optional[str] = None
     role: str
     is_active: bool
     nif: Optional[str] = None
@@ -30,8 +31,10 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None  # também muda o email de login (se a pessoa já tiver conta)
     full_name: Optional[str] = None
     phone: Optional[str] = None
+    landline_phone: Optional[str] = None
     is_active: Optional[bool] = None
     nif: Optional[str] = None
     correspondence_address: Optional[str] = None
@@ -129,6 +132,9 @@ class OwnerFractionLink(BaseModel):
     fraction_identifier: str
     ownership_share: float
     is_primary_contact: bool
+    insurance_company: Optional[str] = None
+    insurance_policy_number: Optional[str] = None
+    insurance_valid_until: Optional[date] = None
 
 
 class OwnerDirectoryEntry(BaseModel):
@@ -138,11 +144,37 @@ class OwnerDirectoryEntry(BaseModel):
     phone: Optional[str] = None
     is_active: bool = True
     is_pending: bool = False
+    has_login: bool = False  # já criou conta / já entrou na app
+    landline_phone: Optional[str] = None
     nif: Optional[str] = None
     correspondence_address: Optional[str] = None
     iban: Optional[str] = None
     notes: Optional[str] = None
     fractions: List[OwnerFractionLink] = []
+
+
+class OwnerProfile(BaseModel):
+    """Dados da ficha de um condómino (criar a partir do ecrã Condóminos ou completar um convite)."""
+    email: EmailStr
+    full_name: str
+    phone: Optional[str] = None
+    landline_phone: Optional[str] = None
+    nif: Optional[str] = None
+    correspondence_address: Optional[str] = None
+    iban: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class OwnerCreate(OwnerProfile):
+    fraction_id: str
+    ownership_share: float = Field(1.0, gt=0, le=1)
+    is_primary_contact: bool = True
+
+
+class FractionInsuranceUpdate(BaseModel):
+    insurance_company: Optional[str] = None
+    insurance_policy_number: Optional[str] = None
+    insurance_valid_until: Optional[date] = None
 
 
 # ---------- Budget ----------
@@ -426,7 +458,8 @@ class DocumentOut(ORMBase):
     condominium_id: str
     title: str
     category: Optional[str] = None
-    file_url: str
+    file_url: str  # para ficheiros anexados: link temporário (válido 1 hora)
+    is_file: bool = False  # True = ficheiro anexado na app; False = link externo
     expires_at: Optional[date] = None
     created_at: datetime
 

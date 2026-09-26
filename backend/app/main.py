@@ -81,6 +81,7 @@ def on_startup():
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS correspondence_address VARCHAR"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS iban VARCHAR"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS notes TEXT"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS landline_phone VARCHAR"))
 
         # Seguro da fração (fractions)
         conn.execute(text("ALTER TABLE fractions ADD COLUMN IF NOT EXISTS insurance_company VARCHAR"))

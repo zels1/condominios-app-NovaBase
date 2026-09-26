@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './lib/AuthContext'
 import { CondoProvider, useCondo } from './lib/CondoContext'
 import Layout from './components/Layout'
 import Login from './pages/Login'
+import ResetPassword from './pages/ResetPassword'
 import AdminSetup from './pages/AdminSetup'
 import AdminDashboard from './pages/AdminDashboard'
 import AdminFractions from './pages/AdminFractions'
@@ -18,8 +19,9 @@ import Documents from './pages/Documents'
 import OwnerHome from './pages/OwnerHome'
 
 function Gate({ children }) {
-  const { loading, user } = useAuth()
+  const { loading, user, recovery } = useAuth()
   if (loading) return <div className="empty">A carregar…</div>
+  if (user && recovery) return <ResetPassword />
   if (!user) return <Login />
   return <CondoProvider>{children}</CondoProvider>
 }
