@@ -11,6 +11,15 @@ from ..services.quota_generation import generate_monthly_quotas, QuotaGeneration
 router = APIRouter(prefix="/condominiums/{condominium_id}/quotas", tags=["Quotas"])
 
 
+
+def _owner_name(link):
+    """Nome do contacto principal; se o convite ainda estiver pendente (sem conta), mostra o email."""
+    if not link:
+        return None
+    if link.user:
+        return link.user.full_name
+    return f"{link.invited_email} (convite pendente)" if link.invited_email else None
+
 @router.post("/generate")
 def generate_quotas(
     condominium_id: str,
@@ -55,7 +64,7 @@ def list_quotas(
         out.append(schemas.QuotaWithFraction(
             **schemas.QuotaOut.model_validate(quota).model_dump(),
             fraction_identifier=quota.fraction.identifier,
-            owner_name=primary.user.full_name if primary else None,
+            owner_name=_owner_name(primary),
             total_due=quota.total_due,
         ))
     return out
@@ -77,7 +86,7 @@ def get_quota(
     return schemas.QuotaWithFraction(
         **schemas.QuotaOut.model_validate(quota).model_dump(),
         fraction_identifier=quota.fraction.identifier,
-        owner_name=primary.user.full_name if primary else None,
+        owner_name=_owner_name(primary),
         total_due=quota.total_due,
     )
 
