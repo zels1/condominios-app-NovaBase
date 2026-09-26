@@ -21,15 +21,36 @@ export default function OwnerHome() {
     return <div className="empty">Ainda não estás associado a nenhuma fração. Fala com a administração do condomínio.</div>
   }
 
-  const totalDue = quotas.filter((q) => q.status !== 'paid' && q.status !== 'waived').reduce((s, q) => s + q.total_due, 0)
+  // Data de hoje no formato AAAA-MM-DD (hora local), para comparar com due_date
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const open = quotas.filter((q) => q.status !== 'paid' && q.status !== 'waived' && q.total_due > 0)
+  // Em dívida = só o que já venceu; o que vence mais tarde aparece como "próximo pagamento"
+  const overdue = open.filter((q) => q.due_date < today)
+  const totalDue = overdue.reduce((s, q) => s + q.total_due, 0)
+  const upcoming = open.filter((q) => q.due_date >= today).sort((a, b) => a.due_date.localeCompare(b.due_date))
+  const nextDate = upcoming[0]?.due_date
+  const nextAmount = upcoming.filter((q) => q.due_date === nextDate).reduce((s, q) => s + q.total_due, 0)
 
   return (
     <div className="stack">
       <h1>As minhas quotas — {selectedCondo.name}</h1>
 
-      <div className="card stat">
-        <span className="label">Total em dívida</span>
-        <span className="value" style={{ color: totalDue > 0 ? 'var(--danger)' : 'var(--primary)' }}>{money(totalDue)}</span>
+      <div className="grid">
+        <div className="card stat">
+          <span className="label">Em dívida (já vencido)</span>
+          <span className="value" style={{ color: totalDue > 0 ? 'var(--danger)' : 'var(--primary)' }}>{money(totalDue)}</span>
+          <span className="hint" style={{ margin: 0 }}>
+            {totalDue > 0 ? `${overdue.length} quota(s) por regularizar` : 'Tudo em dia 👍'}
+          </span>
+        </div>
+        <div className="card stat">
+          <span className="label">Próximo pagamento</span>
+          <span className="value">{nextDate ? money(nextAmount) : '—'}</span>
+          <span className="hint" style={{ margin: 0 }}>
+            {nextDate ? `até ${new Date(nextDate).toLocaleDateString('pt-PT')}` : 'Sem quotas por vencer'}
+          </span>
+        </div>
       </div>
 
       <div className="card">
