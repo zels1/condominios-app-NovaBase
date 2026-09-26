@@ -74,6 +74,8 @@ class Condominium(Base):
     insurance_valid_until = Column(Date, nullable=True)
     external_management_name = Column(String, nullable=True)  # administração externa
     external_management_contact = Column(String, nullable=True)
+    # Tamanho máximo (MB) das fotos enviadas pelos utilizadores (ex: ocorrências)
+    max_upload_mb = Column(Integer, nullable=True, default=5)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     fractions = relationship("Fraction", back_populates="condominium", cascade="all, delete-orphan")

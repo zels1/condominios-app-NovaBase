@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { api } from './api'
 import { useAuth } from './AuthContext'
 
@@ -11,18 +11,23 @@ export function CondoProvider({ children }) {
   const [selectedId, setSelectedId] = useState(() => localStorage.getItem('selectedCondoId') || null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // Depois do primeiro carregamento, os "reload" são silenciosos: não voltam a mostrar
+  // "A carregar…" (isso desmontava a página aberta e perdia mensagens/formulários).
+  const loadedFor = useRef(null)
 
   const reload = useCallback(async () => {
     if (!user) {
       setMe(null); setCondominiums([]); setLoading(false)
       return
     }
-    setLoading(true)
+    const silent = loadedFor.current === user.id
+    if (!silent) setLoading(true)
     setError(null)
     try {
       const [meData, condos] = await Promise.all([api.get('/me'), api.get('/condominiums')])
       setMe(meData)
       setCondominiums(condos)
+      loadedFor.current = user.id
       setSelectedId((prev) => {
         if (prev && condos.some((c) => c.id === prev)) return prev
         return condos[0]?.id || null

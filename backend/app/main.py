@@ -97,3 +97,4 @@ def on_startup():
         conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS insurance_valid_until DATE"))
         conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS external_management_name VARCHAR"))
         conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS external_management_contact VARCHAR"))
+        conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS max_upload_mb INTEGER DEFAULT 5"))

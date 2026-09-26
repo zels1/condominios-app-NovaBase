@@ -1,62 +1,111 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
-import { supabase } from '../lib/supabase'
 import { useCondo } from '../lib/CondoContext'
 import { OccurrenceStatusBadge } from '../components/StatusBadge'
 
 const STATUS_FLOW = ['reported', 'acknowledged', 'in_progress', 'resolved', 'closed']
-const STATUS_LABEL = { reported: 'Recebido', acknowledged: 'A caminho', in_progress: 'A caminho', resolved: 'Resolvido', closed: 'Fechada' }
 const NEXT_LABEL = { reported: 'A caminho', acknowledged: 'A caminho', in_progress: 'Resolvido', resolved: 'Fechar' }
-const PHOTO_BUCKET = 'occurrence-photos'
+const PRIORITY_LABEL = { baixa: 'Prioridade baixa', normal: 'Prioridade normal', alta: 'Prioridade alta', urgente: 'Urgente' }
+const PRIORITY_CLASS = { alta: 'warn', urgente: 'danger' }
+const DEFAULT_MAX_MB = 5
+const MAX_DIMENSION = 1600 // px — suficiente para ver bem a avaria, e muito mais leve
 
-async function uploadPhoto(file) {
-  const path = `${crypto.randomUUID()}-${file.name}`
-  const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, file)
-  if (error) throw new Error(`Não foi possível enviar a foto: ${error.message}`)
-  const { data } = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path)
-  return data.publicUrl
+function formatMB(bytes) {
+  return `${(bytes / 1048576).toLocaleString('pt-PT', { maximumFractionDigits: 1, minimumFractionDigits: 1 })} MB`
+}
+
+// Reduz a foto no próprio telemóvel/computador antes de enviar (JPEG, lado maior ≤ 1600 px).
+// Se o browser não conseguir ler o formato (ex: HEIC no Chrome), envia o original.
+async function shrinkImage(file) {
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+    const scale = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(bitmap.width * scale)
+    canvas.height = Math.round(bitmap.height * scale)
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    bitmap.close?.()
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82))
+    if (blob && blob.size < file.size) return blob
+  } catch {
+    // formato não suportado pelo browser — segue o original
+  }
+  return file
 }
 
 export default function Maintenance() {
   const { selectedCondo, isAdmin } = useCondo()
   const [occurrences, setOccurrences] = useState([])
   const [fractions, setFractions] = useState([])
+  const [filter, setFilter] = useState('all') // all | open | mine
   const [form, setForm] = useState({ title: '', description: '', fraction_id: '', priority: 'normal' })
-  const [photoFile, setPhotoFile] = useState(null)
-  const [photoPreview, setPhotoPreview] = useState(null)
+  const [photo, setPhoto] = useState(null) // { blob, preview, originalSize }
+  const [photoBusy, setPhotoBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null)
   const [busy, setBusy] = useState(false)
   const fileInputRef = useRef(null)
+
+  const maxMb = selectedCondo?.max_upload_mb || DEFAULT_MAX_MB
+  const maxBytes = maxMb * 1048576
 
   async function load() {
     const occs = await api.get(`/condominiums/${selectedCondo.id}/occurrences`)
     setOccurrences(occs)
     if (isAdmin) setFractions(await api.get(`/condominiums/${selectedCondo.id}/fractions`))
   }
-  useEffect(() => { if (selectedCondo) load() }, [selectedCondo])
+  useEffect(() => { if (selectedCondo) load().catch((e) => setError(e.message)) }, [selectedCondo])
 
-  function handlePhotoPick(e) {
+  function clearPhoto() {
+    if (photo?.preview) URL.revokeObjectURL(photo.preview)
+    setPhoto(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  async function handlePhotoPick(e) {
     const file = e.target.files?.[0]
+    setError(null)
     if (!file) return
-    setPhotoFile(file)
-    setPhotoPreview(URL.createObjectURL(file))
+    if (!file.type.startsWith('image/')) {
+      setError('Escolhe um ficheiro de imagem (foto).')
+      clearPhoto()
+      return
+    }
+    setPhotoBusy(true)
+    const blob = await shrinkImage(file)
+    setPhotoBusy(false)
+    if (blob.size > maxBytes) {
+      setError(`A foto tem ${formatMB(blob.size)} e o limite neste condomínio é ${maxMb} MB. Escolhe outra foto ou tira-a com menor resolução.`)
+      clearPhoto()
+      return
+    }
+    if (photo?.preview) URL.revokeObjectURL(photo.preview)
+    setPhoto({ blob, preview: URL.createObjectURL(blob), originalSize: file.size })
   }
 
   async function handleCreate(e) {
     e.preventDefault()
     setError(null)
+    setNotice(null)
+    if (!form.title.trim() && !photo) {
+      setError('Descreve o que se passa ou junta uma foto.')
+      return
+    }
     setBusy(true)
     try {
       let photo_url
-      if (photoFile) photo_url = await uploadPhoto(photoFile)
-      const title = form.title || `Avaria reportada (${new Date().toLocaleString('pt-PT')})`
+      if (photo) {
+        const res = await api.upload(`/condominiums/${selectedCondo.id}/occurrences/photo`, photo.blob, photo.blob.type || 'image/jpeg')
+        photo_url = res.url
+      }
+      const title = form.title.trim() || `Avaria reportada (${new Date().toLocaleString('pt-PT')})`
       await api.post(`/condominiums/${selectedCondo.id}/occurrences`, {
         title, description: form.description || undefined, photo_url,
         fraction_id: form.fraction_id || undefined, priority: form.priority,
       })
       setForm({ title: '', description: '', fraction_id: '', priority: 'normal' })
-      setPhotoFile(null); setPhotoPreview(null)
-      if (fileInputRef.current) fileInputRef.current.value = ''
+      clearPhoto()
+      setNotice('Ocorrência reportada. A administração foi notificada.')
       load()
     } catch (err) { setError(err.message) }
     setBusy(false)
@@ -65,11 +114,21 @@ export default function Maintenance() {
   async function advance(occ) {
     const idx = STATUS_FLOW.indexOf(occ.status)
     const next = STATUS_FLOW[Math.min(idx + 1, STATUS_FLOW.length - 1)]
-    await api.post(`/condominiums/${selectedCondo.id}/occurrences/${occ.id}/updates`, { status: next })
-    load()
+    try {
+      await api.post(`/condominiums/${selectedCondo.id}/occurrences/${occ.id}/updates`, { status: next })
+      load()
+    } catch (err) { setError(err.message) }
   }
 
   if (!selectedCondo) return null
+
+  const isOpen = (o) => o.status !== 'resolved' && o.status !== 'closed'
+  const counts = {
+    all: occurrences.length,
+    open: occurrences.filter(isOpen).length,
+    mine: occurrences.filter((o) => o.reported_by_me).length,
+  }
+  const visible = occurrences.filter((o) => (filter === 'open' ? isOpen(o) : filter === 'mine' ? o.reported_by_me : true))
 
   return (
     <div className="stack">
@@ -78,12 +137,24 @@ export default function Maintenance() {
       <div className="card">
         <h3>Reportar uma avaria — tira uma foto e envia</h3>
         {error && <div className="msg error" style={{ marginBottom: '1em' }}>{error}</div>}
+        {notice && <div className="msg success" style={{ marginBottom: '1em' }}>{notice}</div>}
         <form onSubmit={handleCreate} className="stack">
           <div className="field">
-            <label>Foto (opcional, mas ajuda muito o administrador)</label>
-            <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoPick} />
-            {photoPreview && (
-              <img src={photoPreview} alt="Pré-visualização da foto" style={{ maxWidth: 220, borderRadius: 8, marginTop: '.4em' }} />
+            <label htmlFor="occ-photo">Foto (opcional, mas ajuda muito o administrador)</label>
+            <input id="occ-photo" ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoPick} disabled={photoBusy || busy} />
+            <span className="hint">Tamanho máximo: <strong>{maxMb} MB</strong>. As fotos grandes são reduzidas automaticamente antes de enviar.</span>
+            {photoBusy && <span className="hint">A preparar a foto…</span>}
+            {photo && (
+              <div className="photo-preview">
+                <img src={photo.preview} alt="Pré-visualização da foto" />
+                <div>
+                  <div className="hint" style={{ margin: 0 }}>
+                    {formatMB(photo.blob.size)}
+                    {photo.originalSize > photo.blob.size && ` (reduzida de ${formatMB(photo.originalSize)})`}
+                  </div>
+                  <button type="button" className="btn secondary small" onClick={clearPhoto} style={{ marginTop: '.4em' }}>Remover foto</button>
+                </div>
+              </div>
             )}
           </div>
           <div className="field">
@@ -114,23 +185,44 @@ export default function Maintenance() {
               </select>
             </div>
           </div>
-          <button className="btn" style={{ alignSelf: 'flex-start' }} disabled={busy}>{busy ? 'A enviar…' : 'Reportar'}</button>
+          <button className="btn" style={{ alignSelf: 'flex-start' }} disabled={busy || photoBusy}>{busy ? 'A enviar…' : 'Reportar'}</button>
         </form>
       </div>
 
+      <div className="row between" style={{ alignItems: 'center', flexWrap: 'wrap', gap: '.6rem' }}>
+        <h2 style={{ margin: 0 }}>Ocorrências do condomínio</h2>
+        <div className="filter-tabs" role="tablist" aria-label="Filtrar ocorrências">
+          {[['all', 'Todas'], ['open', 'Em aberto'], ['mine', 'Por mim']].map(([key, label]) => (
+            <button key={key} type="button" role="tab" aria-selected={filter === key}
+              className={`filter-tab${filter === key ? ' active' : ''}`} onClick={() => setFilter(key)}>
+              {label} <span className="filter-count">{counts[key]}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="stack">
-        {occurrences.map((o) => (
+        {visible.map((o) => (
           <div key={o.id} className="card">
-            <div className="row between" style={{ alignItems: 'flex-start' }}>
-              <div className="row" style={{ alignItems: 'flex-start', gap: '.8rem' }}>
+            <div className="row between" style={{ alignItems: 'flex-start', gap: '.8rem' }}>
+              <div className="row" style={{ alignItems: 'flex-start', gap: '.8rem', flexWrap: 'nowrap', minWidth: 0 }}>
                 {o.photo_url && (
-                  <img src={o.photo_url} alt="" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, flexShrink: 0 }} />
+                  <a href={o.photo_url} target="_blank" rel="noreferrer" title="Ver foto em tamanho real" style={{ flexShrink: 0 }}>
+                    <img src={o.photo_url} alt={`Foto: ${o.title}`} style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, display: 'block' }} />
+                  </a>
                 )}
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <h3 style={{ margin: 0 }}>{o.title}</h3>
-                  <span className="badge">{o.priority}</span>
+                  <div className="row" style={{ gap: '.35rem', flexWrap: 'wrap', marginTop: '.3em' }}>
+                    <span className="badge">{o.fraction_identifier ? `Fração ${o.fraction_identifier}` : 'Zona comum'}</span>
+                    <span className={`badge ${PRIORITY_CLASS[o.priority] || ''}`}>{PRIORITY_LABEL[o.priority] || o.priority}</span>
+                    {o.reported_by_me && <span className="badge ok">Reportada por mim</span>}
+                  </div>
                   {o.description && <p style={{ marginTop: '.4em' }}>{o.description}</p>}
-                  <p className="hint">Reportada em {new Date(o.created_at).toLocaleDateString('pt-PT')}</p>
+                  <p className="hint">
+                    Reportada em {new Date(o.created_at).toLocaleDateString('pt-PT')}
+                    {isAdmin && o.reporter_name && ` por ${o.reporter_name}`}
+                  </p>
                 </div>
               </div>
               <OccurrenceStatusBadge status={o.status} />
@@ -155,7 +247,11 @@ export default function Maintenance() {
             )}
           </div>
         ))}
-        {occurrences.length === 0 && <div className="empty">Sem ocorrências reportadas.</div>}
+        {visible.length === 0 && (
+          <div className="empty">
+            {filter === 'mine' ? 'Ainda não reportaste nenhuma ocorrência.' : filter === 'open' ? 'Não há ocorrências em aberto. 👍' : 'Sem ocorrências reportadas.'}
+          </div>
+        )}
       </div>
     </div>
   )

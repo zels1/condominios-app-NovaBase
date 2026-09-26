@@ -56,6 +56,7 @@ class CondominiumCreate(BaseModel):
     insurance_valid_until: Optional[date] = None
     external_management_name: Optional[str] = None
     external_management_contact: Optional[str] = None
+    max_upload_mb: int = Field(5, ge=1, le=20)  # tamanho máximo das fotos, em MB
 
 
 class CondominiumOut(ORMBase):
@@ -75,6 +76,7 @@ class CondominiumOut(ORMBase):
     insurance_valid_until: Optional[date] = None
     external_management_name: Optional[str] = None
     external_management_contact: Optional[str] = None
+    max_upload_mb: Optional[int] = 5
     created_at: datetime
 
 
@@ -338,7 +340,11 @@ class OccurrenceOut(ORMBase):
     status: str
     priority: str
     created_at: datetime
+    resolved_at: Optional[datetime] = None
     updates: List[OccurrenceUpdateOut] = []
+    fraction_identifier: Optional[str] = None  # None = zona comum
+    reported_by_me: bool = False
+    reporter_name: Optional[str] = None  # só preenchido para o administrador
 
 
 # ---------- Assembly / Proxy / Vote ----------

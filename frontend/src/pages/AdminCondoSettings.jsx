@@ -7,6 +7,7 @@ const EMPTY = {
   iban: '', construction_year: '', registry_number: '',
   insurance_company: '', insurance_policy_number: '', insurance_valid_until: '',
   external_management_name: '', external_management_contact: '',
+  max_upload_mb: 5,
 }
 
 export default function AdminCondoSettings() {
@@ -34,9 +35,11 @@ export default function AdminCondoSettings() {
       insurance_valid_until: selectedCondo.insurance_valid_until || '',
       external_management_name: selectedCondo.external_management_name || '',
       external_management_contact: selectedCondo.external_management_contact || '',
+      max_upload_mb: selectedCondo.max_upload_mb || 5,
     })
     setSaved(false)
-  }, [selectedCondo])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCondo?.id])
 
   function set(field, value) { setForm((f) => ({ ...f, [field]: value })); setSaved(false) }
 
@@ -48,6 +51,7 @@ export default function AdminCondoSettings() {
         ...form,
         construction_year: form.construction_year ? parseInt(form.construction_year, 10) : null,
         insurance_valid_until: form.insurance_valid_until || null,
+        max_upload_mb: Math.min(20, Math.max(1, parseInt(form.max_upload_mb, 10) || 5)),
       })
       await reload()
       setSaved(true)
@@ -149,6 +153,14 @@ export default function AdminCondoSettings() {
               <label>Contacto (telefone/email)</label>
               <input value={form.external_management_contact} onChange={(e) => set('external_management_contact', e.target.value)} />
             </div>
+          </div>
+
+          <h3 style={{ margin: '.4em 0 0' }}>Ficheiros</h3>
+          <div className="field" style={{ maxWidth: 280 }}>
+            <label htmlFor="max-upload">Tamanho máximo das fotos (MB)</label>
+            <input id="max-upload" type="number" min={1} max={20} step={1} value={form.max_upload_mb}
+              onChange={(e) => set('max_upload_mb', e.target.value)} required />
+            <span className="hint">Entre 1 e 20 MB. Aplica-se às fotos enviadas nas ocorrências; os condóminos veem este limite ao escolher a foto.</span>
           </div>
 
           <button className="btn" disabled={busy} style={{ alignSelf: 'flex-start' }}>{busy ? 'A guardar…' : 'Guardar dados'}</button>

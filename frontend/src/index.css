@@ -186,3 +186,17 @@ tr:last-child td { border-bottom: none; }
   .sidebar.open .sidebar-footer { display: block; margin-top: .5rem; padding: .8rem .8rem .4rem; border-top: 1px solid var(--border); }
   .main { padding: 1.2rem 1rem; }
 }
+
+/* Ocorrências: pré-visualização da foto e filtros */
+.photo-preview { display: flex; align-items: flex-start; gap: .8rem; margin-top: .5em; }
+.photo-preview img { width: 120px; height: 120px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+.filter-tabs { display: inline-flex; flex-wrap: wrap; gap: .3rem; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: .25rem; }
+.filter-tab { border: none; background: none; padding: .45em .8em; border-radius: 7px; font-weight: 600; font-size: .88rem; color: var(--text-muted); cursor: pointer; }
+.filter-tab:hover { color: var(--text); }
+.filter-tab.active { background: var(--primary-soft); color: var(--primary-dark); }
+.filter-count { display: inline-block; min-width: 1.5em; padding: 0 .35em; margin-left: .2em; border-radius: 999px; background: var(--bg); font-size: .78rem; text-align: center; }
+@media (max-width: 780px) {
+  .filter-tabs { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; }
+  .filter-tab { padding: .5em .3em; font-size: .8rem; line-height: 1.25; }
+  .filter-count { display: block; margin: .2em auto 0; width: fit-content; }
+}
