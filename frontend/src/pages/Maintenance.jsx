@@ -216,12 +216,11 @@ export default function Maintenance() {
                   <div className="row" style={{ gap: '.35rem', flexWrap: 'wrap', marginTop: '.3em' }}>
                     <span className="badge">{o.fraction_identifier ? `Fração ${o.fraction_identifier}` : 'Zona comum'}</span>
                     <span className={`badge ${PRIORITY_CLASS[o.priority] || ''}`}>{PRIORITY_LABEL[o.priority] || o.priority}</span>
-                    {o.reported_by_me && <span className="badge ok">Reportada por mim</span>}
                   </div>
                   {o.description && <p style={{ marginTop: '.4em' }}>{o.description}</p>}
                   <p className="hint">
-                    Reportada em {new Date(o.created_at).toLocaleDateString('pt-PT')}
-                    {isAdmin && o.reporter_name && ` por ${o.reporter_name}`}
+                    Reportada por <strong>{o.reported_by_me ? 'mim' : (o.reporter_name || 'condómino')}</strong>
+                    {' '}em {new Date(o.created_at).toLocaleDateString('pt-PT')}
                   </p>
                 </div>
               </div>
