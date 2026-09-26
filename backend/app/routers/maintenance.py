@@ -71,7 +71,7 @@ def _to_out(occ: models.Occurrence, user: models.User, is_admin: bool, fractions
         **base,
         fraction_identifier=fractions.get(occ.fraction_id),
         reported_by_me=occ.reported_by == user.id,
-        reporter_name=reporters.get(occ.reported_by) if is_admin else None,
+        reporter_name=reporters.get(occ.reported_by),
     )
 
 
@@ -81,10 +81,20 @@ def _serialize(db: Session, occs: list, user: models.User, is_admin: bool) -> li
         f.id: f.identifier
         for f in db.query(models.Fraction).filter(models.Fraction.id.in_(fraction_ids)).all()
     } if fraction_ids else {}
+    # Nome de quem publicou, visível a todos os membros do condomínio.
+    # Se foi o administrador do condomínio, mostra "Administração do condomínio".
     reporters = {}
-    if is_admin:
-        ids = {o.reported_by for o in occs}
-        reporters = {u.id: u.full_name for u in db.query(models.User).filter(models.User.id.in_(ids)).all()} if ids else {}
+    ids = {o.reported_by for o in occs}
+    if ids:
+        admin_ids = {
+            c.admin_user_id
+            for c in db.query(models.Condominium).filter(models.Condominium.id.in_({o.condominium_id for o in occs})).all()
+        }
+        for u in db.query(models.User).filter(models.User.id.in_(ids)).all():
+            if u.id in admin_ids or u.role == models.UserRole.super_admin:
+                reporters[u.id] = "Administração do condomínio"
+            else:
+                reporters[u.id] = u.full_name or u.email
     return [_to_out(o, user, is_admin, fractions, reporters) for o in occs]
 
 
