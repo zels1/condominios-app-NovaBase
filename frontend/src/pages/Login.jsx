@@ -1,11 +1,32 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useAuth, friendlyAuthError } from '../lib/AuthContext'
+
+// Contas usadas recentemente neste dispositivo (só o email — nunca a palavra-passe).
+const RECENT_KEY = 'recentLoginEmails'
+const MAX_RECENT = 5
+
+function loadRecent() {
+  try {
+    const list = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]')
+    return Array.isArray(list) ? list.filter((e) => typeof e === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function saveRecent(list) {
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)) } catch { /* sem localStorage */ }
+}
 
 export default function Login() {
   const { signInWithPassword, signUp } = useAuth()
   const [mode, setMode] = useState('signin') // signin | signup
-  const [email, setEmail] = useState('')
+  const [recent, setRecent] = useState(loadRecent)
+  const [email, setEmail] = useState(() => loadRecent()[0] || '')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [remember, setRemember] = useState(true)
+  const passwordRef = useRef(null)
   const [fullName, setFullName] = useState('')
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -18,6 +39,7 @@ export default function Login() {
       if (mode === 'signin') {
         const { error } = await signInWithPassword(email, password)
         if (error) throw error
+        rememberEmail(email, remember)
       } else {
         const { error } = await signUp(email, password, fullName)
         if (error) throw error
@@ -31,6 +53,26 @@ export default function Login() {
     }
   }
 
+  function rememberEmail(value, keep) {
+    const clean = value.trim().toLowerCase()
+    const others = loadRecent().filter((e) => e !== clean)
+    const next = keep ? [clean, ...others].slice(0, MAX_RECENT) : others
+    saveRecent(next)
+    setRecent(next)
+  }
+
+  function pickRecent(value) {
+    setEmail(value)
+    setPassword('')
+    setError(null)
+    setTimeout(() => passwordRef.current?.focus(), 0)
+  }
+
+  function forgetRecent(value) {
+    rememberEmail(value, false)
+    if (email === value) setEmail('')
+  }
+
   return (
     <div className="auth-screen">
       <div className="card auth-card">
@@ -42,6 +84,22 @@ export default function Login() {
         {error && <div className="msg error" style={{ marginBottom: '1em' }}>{error}</div>}
         {notice && <div className="msg success" style={{ marginBottom: '1em' }}>{notice}</div>}
 
+        {mode === 'signin' && recent.length > 0 && (
+          <div className="recent-accounts">
+            <span className="recent-title">Entrar como</span>
+            {recent.map((r) => (
+              <div key={r} className={`recent-item${r === email.trim().toLowerCase() ? ' selected' : ''}`}>
+                <button type="button" className="recent-pick" onClick={() => pickRecent(r)}>
+                  <span className="recent-avatar" aria-hidden="true">{r[0]?.toUpperCase()}</span>
+                  <span className="recent-email">{r}</span>
+                </button>
+                <button type="button" className="recent-forget" onClick={() => forgetRecent(r)}
+                  aria-label={`Esquecer ${r} neste dispositivo`} title="Esquecer neste dispositivo">✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="stack">
           {mode === 'signup' && (
             <div className="field">
@@ -51,13 +109,27 @@ export default function Login() {
           )}
           <div className="field">
             <label>Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
+            <input type="email" name="email" value={email} onChange={(e) => setEmail(e.target.value)} required
+              autoComplete={mode === 'signin' ? 'username' : 'email'} />
           </div>
           <div className="field">
             <label>Palavra-passe</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required
-              autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} minLength={6} />
+            <div className="password-wrap">
+              <input ref={passwordRef} type={showPassword ? 'text' : 'password'} name="password" value={password}
+                onChange={(e) => setPassword(e.target.value)} required
+                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} minLength={6} />
+              <button type="button" className="password-toggle" onClick={() => setShowPassword((v) => !v)}
+                aria-pressed={showPassword} aria-label={showPassword ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}>
+                {showPassword ? 'Ocultar' : 'Mostrar'}
+              </button>
+            </div>
           </div>
+          {mode === 'signin' && (
+            <label className="remember">
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+              Lembrar este email neste dispositivo
+            </label>
+          )}
           <button className="btn block" disabled={busy}>
             {busy ? 'A processar…' : mode === 'signin' ? 'Entrar' : 'Criar conta'}
           </button>
