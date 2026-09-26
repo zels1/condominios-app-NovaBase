@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useAuth } from '../lib/AuthContext'
+import { useAuth, friendlyAuthError } from '../lib/AuthContext'
 
 export default function Login() {
   const { signInWithPassword, signUp } = useAuth()
@@ -25,7 +25,7 @@ export default function Login() {
         setMode('signin')
       }
     } catch (err) {
-      setError(err.message || 'Ocorreu um erro.')
+      setError(friendlyAuthError(err))
     } finally {
       setBusy(false)
     }
