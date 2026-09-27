@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useCondo } from '../lib/CondoContext'
+import DomvusLogo from './DomvusLogo'
 
 const ADMIN_LINKS = [
   { to: '/', label: 'Resumo', end: true },
@@ -9,6 +10,7 @@ const ADMIN_LINKS = [
   { to: '/condominos', label: 'Condóminos' },
   { to: '/condominio', label: 'Dados do condomínio' },
   { to: '/quotas', label: 'Orçamento e Quotas' },
+  { to: '/conta', label: 'Conta corrente' },
   { to: '/juros', label: 'Juros de mora' },
   { to: '/lembretes', label: 'Lembretes' },
   { to: '/manutencao', label: 'Manutenção' },
@@ -19,6 +21,7 @@ const ADMIN_LINKS = [
 
 const OWNER_LINKS = [
   { to: '/', label: 'As minhas quotas', end: true },
+  { to: '/conta', label: 'Conta do prédio' },
   { to: '/manutencao', label: 'Ocorrências' },
   { to: '/assembleias', label: 'Assembleias' },
   { to: '/documentos', label: 'Documentos' },
@@ -46,7 +49,7 @@ export default function Layout() {
     <div className="app-shell">
       <aside className={`sidebar${menuOpen ? ' open' : ''}`}>
         <div className="sidebar-top">
-          <div className="brand">🏢 Condomínios</div>
+          <NavLink to="/" className="brand" aria-label="Domvus — início"><DomvusLogo size={30} /></NavLink>
           <button
             type="button"
             className="menu-toggle"

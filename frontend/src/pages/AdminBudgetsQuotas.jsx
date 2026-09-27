@@ -2,6 +2,25 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { useCondo } from '../lib/CondoContext'
 import { QuotaStatusBadge } from '../components/StatusBadge'
+import { useSort, SortTh } from '../components/SortableTable'
+
+const STATUS_ORDER = { overdue: 0, partially_paid: 1, pending: 2, paid: 3, waived: 4 }
+const QUOTA_COLUMNS = {
+  fraction: (q) => q.fraction_identifier,
+  owner: (q) => q.owner_name,
+  month: (q) => q.reference_month,
+  due: (q) => q.due_date,
+  base: (q) => Number(q.base_amount),
+  fee: (q) => Number(q.late_fee_amount),
+  due_amount: (q) => Number(q.total_due),
+  status: (q) => STATUS_ORDER[q.status] ?? 9,
+}
+const BUDGET_COLUMNS = {
+  year: (b) => b.year,
+  total: (b) => Number(b.total_amount),
+  monthly: (b) => Number(b.total_amount) / 12,
+  reserve: (b) => Number(b.reserve_fund_percent),
+}
 
 function money(v) { return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(v || 0) }
 function monthInput(d) { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}` }
@@ -11,7 +30,6 @@ export default function AdminBudgetsQuotas() {
   const [tab, setTab] = useState('quotas')
   const [budgets, setBudgets] = useState([])
   const [quotas, setQuotas] = useState([])
-  const [statusFilter, setStatusFilter] = useState('')
   const [genMonth, setGenMonth] = useState(monthInput(new Date()))
   const [genDueDay, setGenDueDay] = useState(8)
   const [genMsg, setGenMsg] = useState(null)
@@ -19,10 +37,11 @@ export default function AdminBudgetsQuotas() {
   const [error, setError] = useState(null)
 
   async function loadBudgets() { setBudgets(await api.get(`/condominiums/${selectedCondo.id}/budgets`)) }
-  async function loadQuotas() { setQuotas(await api.get(`/condominiums/${selectedCondo.id}/quotas`, { status: statusFilter || undefined })) }
+  async function loadQuotas() { setQuotas(await api.get(`/condominiums/${selectedCondo.id}/quotas`)) }
 
   useEffect(() => { if (selectedCondo) { loadBudgets(); loadQuotas() } }, [selectedCondo])
-  useEffect(() => { if (selectedCondo) loadQuotas() }, [statusFilter])
+  const qSort = useSort(quotas, QUOTA_COLUMNS, 'month', 'desc')
+  const bSort = useSort(budgets, BUDGET_COLUMNS, 'year', 'desc')
 
   async function handleCreateBudget(e) {
     e.preventDefault()
@@ -85,9 +104,14 @@ export default function AdminBudgetsQuotas() {
           <div className="card">
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Ano</th><th>Total anual</th><th>Mensalidade (÷12)</th><th>Fundo de reserva</th></tr></thead>
+                <thead><tr>
+                  <SortTh label="Ano" sortKey="year" sort={bSort.sort} onSort={bSort.toggle} />
+                  <SortTh label="Total anual" sortKey="total" sort={bSort.sort} onSort={bSort.toggle} />
+                  <SortTh label="Mensalidade (÷12)" sortKey="monthly" sort={bSort.sort} onSort={bSort.toggle} />
+                  <SortTh label="Fundo de reserva" sortKey="reserve" sort={bSort.sort} onSort={bSort.toggle} />
+                </tr></thead>
                 <tbody>
-                  {budgets.map((b) => (
+                  {bSort.sorted.map((b) => (
                     <tr key={b.id}><td>{b.year}</td><td>{money(b.total_amount)}</td><td>{money(b.total_amount / 12)}</td><td>{b.reserve_fund_percent}%</td></tr>
                   ))}
                   {budgets.length === 0 && <tr><td colSpan={4} className="empty">Sem orçamentos ainda.</td></tr>}
@@ -123,23 +147,26 @@ export default function AdminBudgetsQuotas() {
           </div>
 
           <div className="card">
-            <div className="row between" style={{ marginBottom: '.8em' }}>
+            <div className="row between" style={{ marginBottom: '.8em', alignItems: 'baseline' }}>
               <h3 style={{ margin: 0 }}>Todas as quotas</h3>
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ padding: '.4em', borderRadius: 8, border: '1px solid var(--border)' }}>
-                <option value="">Todos os estados</option>
-                <option value="pending">Pendente</option>
-                <option value="overdue">Em atraso</option>
-                <option value="partially_paid">Pagamento parcial</option>
-                <option value="paid">Paga</option>
-                <option value="waived">Perdoada</option>
-              </select>
+              <span className="hint" style={{ margin: 0 }}>Clica no nome de uma coluna para ordenar.</span>
             </div>
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Fração</th><th>Proprietário</th><th>Mês</th><th>Vencimento</th><th>Base</th><th>Juro</th><th>Em dívida</th><th>Estado</th><th></th></tr></thead>
+                <thead><tr>
+                  <SortTh label="Fração" sortKey="fraction" sort={qSort.sort} onSort={qSort.toggle} />
+                  <SortTh label="Proprietário" sortKey="owner" sort={qSort.sort} onSort={qSort.toggle} />
+                  <SortTh label="Mês" sortKey="month" sort={qSort.sort} onSort={qSort.toggle} />
+                  <SortTh label="Vencimento" sortKey="due" sort={qSort.sort} onSort={qSort.toggle} />
+                  <SortTh label="Base" sortKey="base" sort={qSort.sort} onSort={qSort.toggle} />
+                  <SortTh label="Juro" sortKey="fee" sort={qSort.sort} onSort={qSort.toggle} />
+                  <SortTh label="Em dívida" sortKey="due_amount" sort={qSort.sort} onSort={qSort.toggle} />
+                  <SortTh label="Estado" sortKey="status" sort={qSort.sort} onSort={qSort.toggle} />
+                  <th></th>
+                </tr></thead>
                 <tbody>
-                  {quotas.map((q) => <QuotaRow key={q.id} quota={q} condoId={selectedCondo.id} onChanged={loadQuotas} />)}
-                  {quotas.length === 0 && <tr><td colSpan={9} className="empty">Sem quotas para este filtro.</td></tr>}
+                  {qSort.sorted.map((q) => <QuotaRow key={q.id} quota={q} condoId={selectedCondo.id} onChanged={loadQuotas} />)}
+                  {quotas.length === 0 && <tr><td colSpan={9} className="empty">Ainda não há quotas geradas.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -178,9 +205,17 @@ function QuotaRow({ quota, condoId, onChanged }) {
         <td><strong>{money(quota.total_due)}</strong></td>
         <td><QuotaStatusBadge status={quota.status} /></td>
         <td>
-          {quota.status !== 'paid' && quota.status !== 'waived' && (
-            <button className="btn small" onClick={() => setShowPay(!showPay)}>Registar pagamento</button>
-          )}
+          <div className="row" style={{ gap: '.3rem', flexWrap: 'nowrap' }}>
+            {quota.status !== 'paid' && quota.status !== 'waived' && (
+              <button className="btn small" onClick={() => setShowPay(!showPay)}>Registar pagamento</button>
+            )}
+            {Number(quota.amount_paid) > 0 && (
+              <button className="btn secondary small" title="Descarregar recibo (PDF)"
+                onClick={() => api.download(`/condominiums/${condoId}/quotas/${quota.id}/receipt`, 'recibo.pdf').catch((e) => alert(e.message))}>
+                Recibo
+              </button>
+            )}
+          </div>
         </td>
       </tr>
       {showPay && (

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { useCondo } from '../lib/CondoContext'
 import { OccurrenceStatusBadge } from '../components/StatusBadge'
+import FilePicker from '../components/FilePicker'
 
 const STATUS_FLOW = ['reported', 'acknowledged', 'in_progress', 'resolved', 'closed']
 const NEXT_LABEL = { reported: 'A caminho', acknowledged: 'A caminho', in_progress: 'Resolvido', resolved: 'Fechar' }
@@ -67,10 +68,9 @@ export default function Maintenance() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  async function handlePhotoPick(e) {
-    const file = e.target.files?.[0]
+  async function handlePhotoPick(file) {
     setError(null)
-    if (!file) return
+    if (!file) { clearPhoto(); return }
     if (!file.type.startsWith('image/')) {
       setError('Escolhe um ficheiro de imagem (foto).')
       clearPhoto()
@@ -162,21 +162,13 @@ export default function Maintenance() {
         <form onSubmit={handleCreate} className="stack">
           <div className="field">
             <label htmlFor="occ-photo">Foto (opcional, mas ajuda muito o administrador)</label>
-            <input id="occ-photo" ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoPick} disabled={photoBusy || busy} />
-            <span className="hint">Tamanho máximo: <strong>{maxMb} MB</strong>. As fotos grandes são reduzidas automaticamente antes de enviar.</span>
-            {photoBusy && <span className="hint">A preparar a foto…</span>}
-            {photo && (
-              <div className="photo-preview">
-                <img src={photo.preview} alt="Pré-visualização da foto" />
-                <div>
-                  <div className="hint" style={{ margin: 0 }}>
-                    {formatMB(photo.blob.size)}
-                    {photo.originalSize > photo.blob.size && ` (reduzida de ${formatMB(photo.originalSize)})`}
-                  </div>
-                  <button type="button" className="btn secondary small" onClick={clearPhoto} style={{ marginTop: '.4em' }}>Remover foto</button>
-                </div>
-              </div>
-            )}
+            <FilePicker
+              id="occ-photo" accept="image/*" icon="📷" label="Tirar ou escolher foto"
+              disabled={photoBusy || busy} onFile={handlePhotoPick}
+              file={photo ? { name: photo.originalSize > photo.blob.size ? 'Foto (reduzida para enviar)' : 'Foto', size: photo.blob.size } : null}
+              preview={photo?.preview}
+              hint={photoBusy ? 'A preparar a foto…' : <>Tamanho máximo: <strong>{maxMb} MB</strong>. As fotos grandes são reduzidas automaticamente antes de enviar.{photo && photo.originalSize > photo.blob.size ? ` (${formatMB(photo.originalSize)} → ${formatMB(photo.blob.size)})` : ''}</>}
+            />
           </div>
           <div className="field">
             <label>O que se passa? (opcional se enviares foto)</label>

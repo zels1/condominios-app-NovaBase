@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth, friendlyAuthError } from '../lib/AuthContext'
+import DomvusLogo from '../components/DomvusLogo'
 
 // Ecrã mostrado quando a pessoa abre o link "recuperar palavra-passe" recebido por email.
 export default function ResetPassword() {
@@ -29,6 +30,7 @@ export default function ResetPassword() {
   return (
     <div className="auth-screen">
       <div className="card auth-card">
+        <div className="auth-brand"><DomvusLogo size={36} stacked /></div>
         <h1>Nova palavra-passe</h1>
         <p style={{ color: 'var(--text-muted)' }}>
           Escolhe uma nova palavra-passe para <strong>{user?.email}</strong>.

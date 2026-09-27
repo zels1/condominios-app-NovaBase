@@ -94,7 +94,8 @@ tr:last-child td { border-bottom: none; }
   padding: 1.2rem 1rem; display: flex; flex-direction: column; gap: .3rem;
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
 }
-.sidebar .brand { font-weight: 750; font-size: 1.1rem; margin-bottom: 1rem; color: var(--primary-dark); }
+.sidebar .brand { display: inline-flex; margin-bottom: 1.1rem; padding: .2rem .1rem; text-decoration: none; border-radius: 8px; }
+.sidebar .brand:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
 .sidebar .condo-select { margin-bottom: 1rem; padding: .5em; border-radius: 8px; border: 1px solid var(--border); max-width: 100%; }
 .sidebar-footer { margin-top: auto; padding-top: 1rem; font-size: .8rem; color: var(--text-muted); }
 .menu-toggle {
@@ -233,3 +234,59 @@ tr:last-child td { border-bottom: none; }
 /* Zona de perigo (eliminar condomínio) */
 .danger-zone { border: 1px solid var(--danger); }
 .danger-zone h3 { color: var(--danger); }
+
+/* Logótipo Domvus */
+.domvus-logo { display: inline-flex; align-items: flex-end; gap: .45em; line-height: 1; text-decoration: none; }
+.domvus-logo.stacked { flex-direction: column; align-items: center; gap: .55em; }
+.domvus-wordmark { font-family: 'Poppins', 'Inter', system-ui, sans-serif; font-weight: 600; letter-spacing: -.02em; line-height: .8; }
+.auth-brand { display: flex; flex-direction: column; align-items: center; gap: .5rem; margin-bottom: 1.2rem; text-align: center; }
+.auth-brand .hint { margin: 0; }
+
+/* Escolher ficheiro (botão + arrastar e largar) */
+.file-picker { position: relative; display: flex; flex-direction: column; gap: .5rem; padding: .9rem; border: 1.5px dashed var(--border); border-radius: 12px; background: var(--bg); transition: border-color .15s, background .15s; }
+.file-picker.dragging { border-color: var(--primary); background: var(--primary-soft); }
+.file-picker.has-file { border-style: solid; background: var(--surface); }
+.file-picker.disabled { opacity: .6; }
+.file-picker-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.file-picker-input:focus-visible + * .btn, .file-picker-input:focus-visible + * label { outline: 2px solid var(--primary); outline-offset: 2px; }
+.file-picker-empty { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
+.file-picker-button { display: inline-flex; align-items: center; gap: .45em; cursor: pointer; }
+.file-picker-drop { color: var(--text-muted); font-size: .88rem; }
+.file-picker-chosen { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
+.file-picker-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+.file-picker-icon { font-size: 1.8rem; }
+.file-picker-info { flex: 1; min-width: 120px; display: flex; flex-direction: column; }
+.file-picker-name { font-weight: 600; overflow-wrap: anywhere; }
+.file-picker-size { font-size: .82rem; color: var(--text-muted); }
+.file-picker-actions { display: flex; gap: .4rem; }
+.file-picker-actions label { cursor: pointer; }
+.file-picker-hint { font-size: .8rem; color: var(--text-muted); }
+label.btn[aria-disabled="true"] { pointer-events: none; opacity: .6; }
+@media (max-width: 780px) { .file-picker-drop { display: none; } }
+
+/* Tabelas ordenáveis */
+.sort-th { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: .35em; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; white-space: nowrap; }
+.sort-th:hover { color: var(--text); }
+.sort-th:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+.sort-th .sort-icon { font-size: .7em; opacity: .35; }
+.sort-th.active { color: var(--primary-dark); }
+.sort-th.active .sort-icon { opacity: 1; }
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Conta corrente */
+.year-switch { display: inline-flex; align-items: center; gap: .6rem; }
+.year-switch strong { font-size: 1.15rem; min-width: 3.2em; text-align: center; }
+td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.month-bars { width: 32%; min-width: 120px; }
+.month-bars .bar { display: block; height: 7px; border-radius: 4px; margin: 2px 0; min-width: 0; }
+.month-bars .bar.in { background: var(--primary); }
+.month-bars .bar.out { background: var(--danger); opacity: .75; }
+.legend { display: flex; align-items: center; gap: .4rem; font-size: .8rem; color: var(--text-muted); margin-top: .6rem; }
+.legend .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-left: .6rem; }
+.legend .dot:first-child { margin-left: 0; }
+.legend .dot.in { background: var(--primary); }
+.legend .dot.out { background: var(--danger); opacity: .75; }
+@media (max-width: 780px) { .month-bars, .month-bars-head { display: none; } }
+.file-picker label.btn { color: #fff; font-weight: 600; font-size: .92rem; margin: 0; text-transform: none; letter-spacing: normal; }
+.file-picker label.btn.secondary { color: var(--text); }
+.file-picker label.btn.small { font-size: .85rem; }

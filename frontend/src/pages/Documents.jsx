@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { useCondo } from '../lib/CondoContext'
+import FilePicker from '../components/FilePicker'
 
 const MAX_DOCUMENT_MB = 20
 const CATEGORIES = ['Ata', 'Regulamento', 'Seguro', 'Contrato', 'Orçamento', 'Relatório de contas', 'Certificado', 'Outro']
@@ -38,7 +39,6 @@ export default function Documents() {
   const [commForm, setCommForm] = useState({ title: '', body: '' })
   const [commError, setCommError] = useState(null)
   const [loadError, setLoadError] = useState(null)
-  const fileRef = useRef(null)
 
   async function load() {
     try {
@@ -51,18 +51,17 @@ export default function Documents() {
   }
   useEffect(() => { if (selectedCondo) load() }, [selectedCondo])
 
-  function pickFile(e) {
-    const f = e.target.files?.[0]
+  function pickFile(f) {
     setDocError(null)
     if (!f) { setFile(null); return }
     const ext = f.name.split('.').pop().toLowerCase()
     if (!EXT_TYPES[ext]) {
       setDocError('Tipo de ficheiro não suportado. Usa PDF, imagem, Word, Excel, OpenDocument ou texto.')
-      e.target.value = ''; setFile(null); return
+      setFile(null); return
     }
     if (f.size > MAX_DOCUMENT_MB * 1048576) {
       setDocError(`O ficheiro tem ${formatMB(f.size)} e o máximo é ${MAX_DOCUMENT_MB} MB.`)
-      e.target.value = ''; setFile(null); return
+      setFile(null); return
     }
     setFile(f)
     // sugere o título a partir do nome do ficheiro
@@ -89,7 +88,6 @@ export default function Documents() {
         expires_at: docForm.expires_at || undefined,
       })
       setDocForm(EMPTY_DOC); setFile(null)
-      if (fileRef.current) fileRef.current.value = ''
       setDocNotice('Documento adicionado. Já está visível para os condóminos.')
       load()
     } catch (err) { setDocError(err.message) }
@@ -135,9 +133,8 @@ export default function Documents() {
             {source === 'file' ? (
               <div className="field">
                 <label htmlFor="doc-file">Ficheiro *</label>
-                <input id="doc-file" ref={fileRef} type="file" accept={ACCEPT} onChange={pickFile} disabled={docBusy} />
-                <span className="hint">PDF, imagem, Word, Excel, OpenDocument ou texto. Máximo <strong>{MAX_DOCUMENT_MB} MB</strong>.
-                  {file && ` Selecionado: ${file.name} (${formatMB(file.size)}).`}</span>
+                <FilePicker id="doc-file" accept={ACCEPT} file={file} onFile={pickFile} disabled={docBusy}
+                  hint={<>PDF, imagem, Word, Excel, OpenDocument ou texto. Máximo <strong>{MAX_DOCUMENT_MB} MB</strong>.</>} />
               </div>
             ) : (
               <div className="field">

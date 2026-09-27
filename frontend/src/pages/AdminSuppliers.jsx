@@ -1,6 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api'
 import { useCondo } from '../lib/CondoContext'
+import { useSort, SortTh } from '../components/SortableTable'
+
+const SUPPLIER_COLUMNS = {
+  name: (s) => s.name,
+  category: (s) => s.category,
+  contact: (s) => s.contact_phone || s.contact_email,
+}
+const CONTRACT_COLUMNS = {
+  title: (c) => c.title,
+  end: (c) => c.end_date,
+  alert: (c) => c.renewal_alert_days,
+  value: (c) => (c.annual_value == null ? null : Number(c.annual_value)),
+}
 
 function money(v) { return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(v || 0) }
 
@@ -40,6 +53,19 @@ export default function AdminSuppliers() {
     load()
   }
 
+  const supplierName = useMemo(() => Object.fromEntries(suppliers.map((s) => [s.id, s.name])), [suppliers])
+  const expenseColumns = useMemo(() => ({
+    date: (e) => e.expense_date,
+    category: (e) => e.category,
+    description: (e) => e.description,
+    supplier: (e) => supplierName[e.supplier_id],
+    amount: (e) => Number(e.amount),
+  }), [supplierName])
+  const sSort = useSort(suppliers, SUPPLIER_COLUMNS, 'name')
+  const cSort = useSort(contracts, CONTRACT_COLUMNS, 'end')
+  const eSort = useSort(expenses, expenseColumns, 'date', 'desc')
+  const expenseTotal = expenses.reduce((t, e) => t + Number(e.amount), 0)
+
   if (!selectedCondo) return null
 
   return (
@@ -64,9 +90,13 @@ export default function AdminSuppliers() {
           </div>
           <div className="card">
             <div className="table-wrap">
-              <table><thead><tr><th>Nome</th><th>Categoria</th><th>Contacto</th></tr></thead>
+              <table><thead><tr>
+                <SortTh label="Nome" sortKey="name" sort={sSort.sort} onSort={sSort.toggle} />
+                <SortTh label="Categoria" sortKey="category" sort={sSort.sort} onSort={sSort.toggle} />
+                <SortTh label="Contacto" sortKey="contact" sort={sSort.sort} onSort={sSort.toggle} />
+              </tr></thead>
                 <tbody>
-                  {suppliers.map((s) => <tr key={s.id}><td>{s.name}</td><td>{s.category || '—'}</td><td>{s.contact_phone || s.contact_email || '—'}</td></tr>)}
+                  {sSort.sorted.map((s) => <tr key={s.id}><td>{s.name}</td><td>{s.category || '—'}</td><td>{s.contact_phone || s.contact_email || '—'}</td></tr>)}
                   {suppliers.length === 0 && <tr><td colSpan={3} className="empty">Sem fornecedores.</td></tr>}
                 </tbody>
               </table>
@@ -78,9 +108,14 @@ export default function AdminSuppliers() {
       {tab === 'contracts' && (
         <div className="card">
           <div className="table-wrap">
-            <table><thead><tr><th>Título</th><th>Fim</th><th>Alerta (dias antes)</th><th>Valor anual</th></tr></thead>
+            <table><thead><tr>
+              <SortTh label="Título" sortKey="title" sort={cSort.sort} onSort={cSort.toggle} />
+              <SortTh label="Fim" sortKey="end" sort={cSort.sort} onSort={cSort.toggle} />
+              <SortTh label="Alerta (dias antes)" sortKey="alert" sort={cSort.sort} onSort={cSort.toggle} />
+              <SortTh label="Valor anual" sortKey="value" sort={cSort.sort} onSort={cSort.toggle} />
+            </tr></thead>
               <tbody>
-                {contracts.map((c) => <tr key={c.id}><td>{c.title}</td><td>{c.end_date ? new Date(c.end_date).toLocaleDateString('pt-PT') : '—'}</td><td>{c.renewal_alert_days}</td><td>{c.annual_value ? money(c.annual_value) : '—'}</td></tr>)}
+                {cSort.sorted.map((c) => <tr key={c.id}><td>{c.title}</td><td>{c.end_date ? new Date(c.end_date).toLocaleDateString('pt-PT') : '—'}</td><td>{c.renewal_alert_days}</td><td>{c.annual_value ? money(c.annual_value) : '—'}</td></tr>)}
                 {contracts.length === 0 && <tr><td colSpan={4} className="empty">Sem contratos. Adiciona-os a partir da página de um fornecedor específico via API, ou pede para adicionarmos aqui um formulário dedicado.</td></tr>}
               </tbody>
             </table>
@@ -108,11 +143,28 @@ export default function AdminSuppliers() {
           </div>
           <div className="card">
             <div className="table-wrap">
-              <table><thead><tr><th>Data</th><th>Categoria</th><th>Descrição</th><th>Valor</th></tr></thead>
+              <table><thead><tr>
+                <SortTh label="Data" sortKey="date" sort={eSort.sort} onSort={eSort.toggle} />
+                <SortTh label="Categoria" sortKey="category" sort={eSort.sort} onSort={eSort.toggle} />
+                <SortTh label="Descrição" sortKey="description" sort={eSort.sort} onSort={eSort.toggle} />
+                <SortTh label="Fornecedor" sortKey="supplier" sort={eSort.sort} onSort={eSort.toggle} />
+                <SortTh label="Valor" sortKey="amount" sort={eSort.sort} onSort={eSort.toggle} align="right" />
+              </tr></thead>
                 <tbody>
-                  {expenses.map((e) => <tr key={e.id}><td>{new Date(e.expense_date).toLocaleDateString('pt-PT')}</td><td>{e.category}</td><td>{e.description || '—'}</td><td>{money(e.amount)}</td></tr>)}
-                  {expenses.length === 0 && <tr><td colSpan={4} className="empty">Sem despesas registadas.</td></tr>}
+                  {eSort.sorted.map((e) => (
+                    <tr key={e.id}>
+                      <td>{new Date(e.expense_date).toLocaleDateString('pt-PT')}</td>
+                      <td>{e.category}</td>
+                      <td>{e.description || '—'}</td>
+                      <td>{supplierName[e.supplier_id] || '—'}</td>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{money(e.amount)}</td>
+                    </tr>
+                  ))}
+                  {expenses.length === 0 && <tr><td colSpan={5} className="empty">Sem despesas registadas.</td></tr>}
                 </tbody>
+                {expenses.length > 0 && (
+                  <tfoot><tr><td colSpan={4}><strong>Total ({expenses.length} despesas)</strong></td><td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}><strong>{money(expenseTotal)}</strong></td></tr></tfoot>
+                )}
               </table>
             </div>
           </div>

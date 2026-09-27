@@ -62,10 +62,33 @@ async function upload(path, blob, contentType) {
   return res.json()
 }
 
+// Descarrega um ficheiro da API (ex: recibo em PDF) e oferece-o ao utilizador para guardar.
+async function download(path, fallbackName = 'ficheiro') {
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  const res = await fetch(`${BASE_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  if (!res.ok) {
+    let detail = res.statusText
+    try { detail = (await res.json()).detail || detail } catch { /* sem JSON */ }
+    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+  }
+  const blob = await res.blob()
+  const match = /filename="?([^";]+)"?/i.exec(res.headers.get('content-disposition') || '')
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = match ? match[1] : fallbackName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10000)
+}
+
 export const api = {
   get: (path, params) => request(path, { params }),
   post: (path, body) => request(path, { method: 'POST', body }),
   put: (path, body) => request(path, { method: 'PUT', body }),
   del: (path) => request(path, { method: 'DELETE' }),
   upload,
+  download,
 }

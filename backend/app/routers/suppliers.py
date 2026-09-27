@@ -5,7 +5,7 @@ from typing import List
 
 from .. import models, schemas
 from ..database import get_db
-from ..auth import get_current_user, require_condo_admin
+from ..auth import get_current_user, require_condo_admin, require_condo_member
 
 router = APIRouter(prefix="/condominiums/{condominium_id}", tags=["Fornecedores e Despesas"])
 
@@ -22,6 +22,7 @@ def create_supplier(condominium_id: str, payload: schemas.SupplierCreate, db: Se
 
 @router.get("/suppliers", response_model=List[schemas.SupplierOut])
 def list_suppliers(condominium_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    require_condo_member(db, user, condominium_id)
     return db.query(models.Supplier).filter(models.Supplier.condominium_id == condominium_id).order_by(models.Supplier.name).all()
 
 
@@ -52,6 +53,7 @@ def create_contract(condominium_id: str, supplier_id: str, payload: schemas.Cont
 
 @router.get("/contracts", response_model=List[schemas.ContractOut])
 def list_contracts(condominium_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    require_condo_member(db, user, condominium_id)
     return (
         db.query(models.Contract)
         .join(models.Supplier)
@@ -73,6 +75,7 @@ def create_expense(condominium_id: str, payload: schemas.ExpenseCreate, db: Sess
 
 @router.get("/expenses", response_model=List[schemas.ExpenseOut])
 def list_expenses(condominium_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    require_condo_member(db, user, condominium_id)
     return db.query(models.Expense).filter(models.Expense.condominium_id == condominium_id).order_by(models.Expense.expense_date.desc()).all()
 
 

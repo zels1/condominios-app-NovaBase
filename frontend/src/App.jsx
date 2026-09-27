@@ -17,6 +17,7 @@ import Maintenance from './pages/Maintenance'
 import Assemblies from './pages/Assemblies'
 import Documents from './pages/Documents'
 import OwnerHome from './pages/OwnerHome'
+import AccountStatement from './pages/AccountStatement'
 
 function Gate({ children }) {
   const { loading, user, recovery } = useAuth()
@@ -50,6 +51,7 @@ export default function App() {
               <Route path="/manutencao" element={<Maintenance />} />
               <Route path="/assembleias" element={<Assemblies />} />
               <Route path="/documentos" element={<Documents />} />
+              <Route path="/conta" element={<AccountStatement />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>

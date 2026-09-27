@@ -13,7 +13,7 @@ from .models import Base
 from .routers import (
     condominiums, fractions, budgets, quotas, payments,
     latefees, reminders, suppliers, maintenance, assemblies,
-    documents, dashboard, users, owners,
+    documents, dashboard, users, owners, account,
 )
 
 app = FastAPI(title="Gestão de Condomínios API", version="1.0.0")
@@ -44,12 +44,14 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # para o browser conseguir ler o nome do ficheiro nos downloads (ex: recibos em PDF)
+    expose_headers=["Content-Disposition"],
 )
 
 for router in (
     condominiums.router, fractions.router, budgets.router, quotas.router, payments.router,
     latefees.router, reminders.router, suppliers.router, maintenance.router, assemblies.router,
-    documents.router, dashboard.router, users.router, owners.router,
+    documents.router, dashboard.router, users.router, owners.router, account.router,
 ):
     app.include_router(router)
 

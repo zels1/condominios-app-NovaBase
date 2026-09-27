@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { useAuth, friendlyAuthError } from '../lib/AuthContext'
+import DomvusLogo from '../components/DomvusLogo'
 
 // Contas usadas recentemente neste dispositivo (só o email — nunca a palavra-passe).
 const RECENT_KEY = 'recentLoginEmails'
@@ -89,7 +90,10 @@ export default function Login() {
   return (
     <div className="auth-screen">
       <div className="card auth-card">
-        <h1>Gestão de Condomínios</h1>
+        <div className="auth-brand">
+          <DomvusLogo size={44} stacked />
+          <span className="hint">Gestão de condomínios</span>
+        </div>
         <p style={{ color: 'var(--text-muted)' }}>
           {mode === 'signin' && 'Inicia sessão para continuar.'}
           {mode === 'signup' && 'Cria a tua conta.'}

@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from .. import models, schemas
 from ..database import get_db
-from ..auth import get_current_user, require_condo_admin, get_user_fraction_ids
+from ..auth import get_current_user, require_condo_admin, get_user_fraction_ids, require_condo_member
 from ..services.quota_generation import generate_monthly_quotas, QuotaGenerationError
 
 router = APIRouter(prefix="/condominiums/{condominium_id}/quotas", tags=["Quotas"])
@@ -77,7 +77,12 @@ def get_quota(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    quota = db.query(models.Quota).filter(models.Quota.id == quota_id).first()
+    require_condo_member(db, user, condominium_id)
+    quota = (
+        db.query(models.Quota).join(models.Fraction)
+        .filter(models.Quota.id == quota_id, models.Fraction.condominium_id == condominium_id)
+        .first()
+    )
     if not quota:
         raise HTTPException(404, "Quota não encontrada.")
     if user.role == models.UserRole.owner and quota.fraction_id not in get_user_fraction_ids(db, user):
