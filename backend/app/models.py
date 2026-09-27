@@ -100,11 +100,16 @@ class Fraction(Base):
     insurance_company = Column(String, nullable=True)
     insurance_policy_number = Column(String, nullable=True)
     insurance_valid_until = Column(Date, nullable=True)
+    insurance_document_url = Column(String, nullable=True)  # ficheiro da apólice (sb://… privado)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     condominium = relationship("Condominium", back_populates="fractions")
     owners = relationship("FractionOwner", back_populates="fraction", cascade="all, delete-orphan")
     quotas = relationship("Quota", back_populates="fraction", cascade="all, delete-orphan")
+
+    @property
+    def has_insurance_document(self) -> bool:
+        return bool(self.insurance_document_url)
 
     __table_args__ = (
         UniqueConstraint("condominium_id", "identifier", name="uq_fraction_identifier"),

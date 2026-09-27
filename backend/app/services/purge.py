@@ -32,6 +32,7 @@ def delete_fraction(db: Session, fraction: models.Fraction) -> dict:
     As ocorrências dessa fração não se perdem: passam a 'zona comum'."""
     fid = fraction.id
     summary = fraction_summary(db, fid)
+    insurance_ref = fraction.insurance_document_url
     quota_ids = _ids(db.query(models.Quota.id).filter(models.Quota.fraction_id == fid))
     if quota_ids:
         db.query(models.ReminderLog).filter(models.ReminderLog.quota_id.in_(quota_ids)).delete(synchronize_session=False)
@@ -48,6 +49,8 @@ def delete_fraction(db: Session, fraction: models.Fraction) -> dict:
     db.query(models.Fraction).filter(models.Fraction.id == fid).delete(synchronize_session=False)
     db.flush()
     summary["users_removed"] = delete_orphan_owners(db, user_ids)
+    if is_private_ref(insurance_ref):
+        delete_file(insurance_ref)
     return summary
 
 
@@ -133,6 +136,9 @@ def delete_condominium(db: Session, condo: models.Condominium) -> dict:
     user_ids = _ids(db.query(models.FractionOwner.user_id).filter(
         models.FractionOwner.fraction_id.in_(fraction_ids), models.FractionOwner.user_id.isnot(None))) if fraction_ids else []
     doc_refs = [r for r in _ids(db.query(models.Document.file_url).filter(models.Document.condominium_id == cid)) if is_private_ref(r)]
+    doc_refs += [r for r in _ids(db.query(models.Fraction.insurance_document_url).filter(models.Fraction.condominium_id == cid)) if is_private_ref(r)]
+    if supplier_ids:
+        doc_refs += [r for r in _ids(db.query(models.Contract.document_url).filter(models.Contract.supplier_id.in_(supplier_ids))) if is_private_ref(r)]
 
     def wipe(model, *conds):
         db.query(model).filter(*conds).delete(synchronize_session=False)

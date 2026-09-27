@@ -149,7 +149,7 @@ def build_quota_receipt(condo, fraction, owner, quota, payments) -> bytes:
         y -= 7 * mm
 
     status = "PAGA" if total_paid >= float(quota.base_amount) + float(quota.late_fee_amount or 0) - 0.005 else "PAGAMENTO PARCIAL"
-    c.setFillColor(colors.HexColor("#2F6F4F") if status == "PAGA" else colors.HexColor("#B8860B"))
+    c.setFillColor(colors.HexColor("#2B507C") if status == "PAGA" else colors.HexColor("#B8860B"))
     c.setFont("Helvetica-Bold", 11)
     c.drawString(left, y + 7 * mm, f"Estado: {status}")
 

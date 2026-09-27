@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { useCondo } from '../lib/CondoContext'
+import FilePicker from '../components/FilePicker'
+import { DOC_ACCEPT, checkDocFile, uploadDocFile } from '../lib/files'
 
 const EMPTY_PROFILE = {
   full_name: '', email: '', phone: '', landline_phone: '', nif: '', correspondence_address: '', iban: '', notes: '',
@@ -14,7 +16,7 @@ function ProfileFields({ form, setForm, emailHint }) {
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
   return (
     <>
-      <div className="row">
+      <div className="row form-row">
         <div className="field" style={{ flex: 2, minWidth: 200 }}>
           <label>Nome *</label>
           <input value={form.full_name} onChange={set('full_name')} required />
@@ -25,7 +27,7 @@ function ProfileFields({ form, setForm, emailHint }) {
           {emailHint && <span className="hint">{emailHint}</span>}
         </div>
       </div>
-      <div className="row">
+      <div className="row form-row">
         <div className="field" style={{ flex: 1, minWidth: 150 }}>
           <label>Telemóvel</label>
           <input type="tel" value={form.phone} onChange={set('phone')} placeholder="912 345 678" />
@@ -44,7 +46,7 @@ function ProfileFields({ form, setForm, emailHint }) {
         <input value={form.correspondence_address} onChange={set('correspondence_address')} placeholder="Rua, nº, andar, código postal, localidade" />
         <span className="hint">Deixa vazio se a correspondência for para a própria fração.</span>
       </div>
-      <div className="row">
+      <div className="row form-row">
         <div className="field" style={{ flex: 1, minWidth: 220 }}>
           <label>IBAN (para reembolsos)</label>
           <input value={form.iban} onChange={set('iban')} placeholder="PT50 ..." />
@@ -65,6 +67,8 @@ export default function AdminOwners() {
   const [editing, setEditing] = useState(null) // id do condómino (ou "pending-…") em edição
   const [form, setForm] = useState({ ...EMPTY_PROFILE, is_active: true })
   const [insurance, setInsurance] = useState({}) // fraction_id -> {insurance_company, ...}
+  const [policyFiles, setPolicyFiles] = useState({}) // fraction_id -> ficheiro da apólice escolhido
+  const openPolicy = (fractionId) => api.openFile(`/condominiums/${selectedCondo.id}/fractions/${fractionId}/insurance/document`).catch((e) => setError(e.message))
   const [adding, setAdding] = useState(false)
   const [newForm, setNewForm] = useState(EMPTY_NEW)
   const [error, setError] = useState(null)
@@ -85,6 +89,7 @@ export default function AdminOwners() {
   function startEdit(o) {
     setAdding(false)
     setEditing(o.id)
+    setPolicyFiles({})
     setNotice(null)
     setForm({
       full_name: o.is_pending ? '' : o.full_name,
@@ -126,15 +131,19 @@ export default function AdminOwners() {
         if (!now) continue
         const before = [f.insurance_company || '', f.insurance_policy_number || '', f.insurance_valid_until || '']
         const after = [now.insurance_company, now.insurance_policy_number, now.insurance_valid_until]
-        if (before.join('|') !== after.join('|')) {
-          await api.put(`${base}/fractions/${f.fraction_id}/insurance`, {
+        const file = policyFiles[f.fraction_id]
+        if (before.join('|') !== after.join('|') || file) {
+          const body = {
             insurance_company: now.insurance_company || null,
             insurance_policy_number: now.insurance_policy_number || null,
             insurance_valid_until: now.insurance_valid_until || null,
-          })
+          }
+          if (file) body.insurance_document_url = await uploadDocFile(selectedCondo.id, file)
+          await api.put(`${base}/fractions/${f.fraction_id}/insurance`, body)
         }
       }
       setEditing(null)
+      setPolicyFiles({})
       setNotice(`Ficha de ${form.full_name} guardada.`)
       await load()
     } catch (err) { setError(err.message) }
@@ -274,6 +283,21 @@ export default function AdminOwners() {
                             <label>Válida até</label>
                             <input type="date" value={ins.insurance_valid_until || ''} onChange={setIns('insurance_valid_until')} />
                           </div>
+                          <div className="field" style={{ flexBasis: '100%', margin: '-.3em 0 0' }}>
+                            <div className="row" style={{ gap: '.5rem', alignItems: 'center' }}>
+                              {f.has_insurance_document && !policyFiles[f.fraction_id] && (
+                                <button type="button" className="btn secondary small" onClick={() => openPolicy(f.fraction_id)}>Ver apólice</button>
+                              )}
+                              <FilePicker id={`owner-policy-${f.fraction_id}`} accept={DOC_ACCEPT} file={policyFiles[f.fraction_id] || null}
+                                label={f.has_insurance_document ? 'Substituir apólice' : 'Anexar apólice'}
+                                emptyText={f.has_insurance_document ? '' : 'Sem ficheiro da apólice'}
+                                onFile={(file) => {
+                                  const problem = checkDocFile(file)
+                                  if (problem) { setError(problem); return }
+                                  setPolicyFiles((p) => ({ ...p, [f.fraction_id]: file }))
+                                }} />
+                            </div>
+                          </div>
                         </div>
                       )
                     })}
@@ -326,6 +350,9 @@ export default function AdminOwners() {
                             ? `Seguro: ${f.insurance_company}${f.insurance_policy_number ? `, apólice ${f.insurance_policy_number}` : ''}${f.insurance_valid_until ? ` · válido até ${fmtDate(f.insurance_valid_until)}` : ''}`
                             : 'Sem seguro registado'}
                         </span>
+                        {f.has_insurance_document && (
+                          <button type="button" className="link-button small" onClick={() => openPolicy(f.fraction_id)}>📄 Ver apólice</button>
+                        )}
                       </div>
                     ))}
                   </div>

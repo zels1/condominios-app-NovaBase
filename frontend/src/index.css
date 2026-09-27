@@ -4,9 +4,9 @@
   --border: #e3e6ea;
   --text: #1c2230;
   --text-muted: #667085;
-  --primary: #2f6f4f;
-  --primary-dark: #24583f;
-  --primary-soft: #e8f3ec;
+  --primary: #2b507c;
+  --primary-dark: #0d274c;
+  --primary-soft: #e8eef6;
   --danger: #c0392b;
   --danger-soft: #fbeae7;
   --warning: #b8860b;
@@ -121,7 +121,7 @@ tr:last-child td { border-bottom: none; }
 
 .auth-screen {
   min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem;
-  background: linear-gradient(160deg, #eef4f0, var(--bg));
+  background: linear-gradient(160deg, #e9eff7, var(--bg));
 }
 .auth-card { width: 100%; max-width: 380px; }
 
@@ -319,3 +319,4 @@ label.btn[aria-disabled="true"] { pointer-events: none; opacity: .6; }
 .fee-facts strong { color: var(--text); }
 .file-picker-row label.btn { line-height: 1.2; }
 .file-picker-row label.btn.small { font-size: .85rem; }
+.row.form-row { align-items: flex-start; }

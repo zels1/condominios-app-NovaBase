@@ -58,7 +58,7 @@ export default function Maintenance() {
   async function load() {
     const occs = await api.get(`/condominiums/${selectedCondo.id}/occurrences`)
     setOccurrences(occs)
-    if (isAdmin) setFractions(await api.get(`/condominiums/${selectedCondo.id}/fractions`))
+    setFractions(await api.get(`/condominiums/${selectedCondo.id}/occurrences/fractions`))
   }
   useEffect(() => { if (selectedCondo) load().catch((e) => setError(e.message)) }, [selectedCondo])
 
@@ -179,12 +179,12 @@ export default function Maintenance() {
             <textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
           <div className="row">
-            {isAdmin && (
-              <div className="field" style={{ flex: 1 }}>
-                <label>Fração (opcional — zona comum se vazio)</label>
-                <select value={form.fraction_id} onChange={(e) => setForm({ ...form, fraction_id: e.target.value })}>
-                  <option value="">Zona comum</option>
-                  {fractions.map((f) => <option key={f.id} value={f.id}>{f.identifier}</option>)}
+            {(isAdmin || fractions.length > 0) && (
+              <div className="field" style={{ flex: 1, minWidth: 180 }}>
+                <label htmlFor="occ-where">Onde é?</label>
+                <select id="occ-where" value={form.fraction_id} onChange={(e) => setForm({ ...form, fraction_id: e.target.value })}>
+                  <option value="">Zona comum (escadas, garagem, elevador…)</option>
+                  {fractions.map((f) => <option key={f.id} value={f.id}>{isAdmin ? `Fração ${f.identifier}` : `A minha fração — ${f.identifier}`}</option>)}
                 </select>
               </div>
             )}

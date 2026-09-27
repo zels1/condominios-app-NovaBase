@@ -89,6 +89,7 @@ def on_startup():
         conn.execute(text("ALTER TABLE fractions ADD COLUMN IF NOT EXISTS insurance_company VARCHAR"))
         conn.execute(text("ALTER TABLE fractions ADD COLUMN IF NOT EXISTS insurance_policy_number VARCHAR"))
         conn.execute(text("ALTER TABLE fractions ADD COLUMN IF NOT EXISTS insurance_valid_until DATE"))
+        conn.execute(text("ALTER TABLE fractions ADD COLUMN IF NOT EXISTS insurance_document_url VARCHAR"))
 
         # Ficha completa do condomínio (condominiums)
         conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS district VARCHAR"))

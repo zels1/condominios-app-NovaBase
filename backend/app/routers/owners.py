@@ -47,6 +47,7 @@ def _fraction_link(link: models.FractionOwner, fraction: models.Fraction) -> sch
         insurance_company=fraction.insurance_company,
         insurance_policy_number=fraction.insurance_policy_number,
         insurance_valid_until=fraction.insurance_valid_until,
+        has_insurance_document=bool(fraction.insurance_document_url),
     )
 
 
@@ -230,6 +231,8 @@ def update_owner_profile(
                 raise HTTPException(502, str(e))
         target.email = new_email
 
+    if "is_active" in changes and changes["is_active"] is False and target.role != models.UserRole.owner:
+        raise HTTPException(403, "Não é possível desativar a conta de um administrador a partir daqui.")
     for k, v in changes.items():
         if k == "full_name" and not _clean(v):
             raise HTTPException(400, "O nome não pode ficar vazio.")

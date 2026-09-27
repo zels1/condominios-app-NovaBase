@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { useCondo } from '../lib/CondoContext'
+import FilePicker from '../components/FilePicker'
+import { DOC_ACCEPT, DOC_MAX_MB, checkDocFile, uploadDocFile } from '../lib/files'
 
 const TYPES = [['habitação', 'Habitação'], ['comércio', 'Comércio'], ['garagem', 'Garagem'], ['arrumos', 'Arrumos']]
 
@@ -126,6 +128,15 @@ function FractionCard({ fraction, condoId, expanded, onToggle, editing, onEdit, 
     insurance_valid_until: fraction.insurance_valid_until || '',
   })
   const [editingIns, setEditingIns] = useState(false)
+  const [policyFile, setPolicyFile] = useState(null)
+  const [removePolicy, setRemovePolicy] = useState(false)
+
+  function pickPolicy(f) {
+    const problem = checkDocFile(f)
+    if (problem) { setErr(problem); setPolicyFile(null); return }
+    setErr(null); setPolicyFile(f); if (f) setRemovePolicy(false)
+  }
+  const openPolicy = () => api.openFile(`${base}/insurance/document`).catch((e) => setErr(e.message))
 
   async function loadOwners() { setOwners(await api.get(`${base}/owners`)) }
   useEffect(() => { if (expanded) loadOwners().catch((e) => setErr(e.message)) }, [expanded])
@@ -171,12 +182,15 @@ function FractionCard({ fraction, condoId, expanded, onToggle, editing, onEdit, 
     }, `Proprietário da fração ${fraction.identifier} alterado.`)
   }
   const saveIns = () => run(async () => {
-    await api.put(`${base}/insurance`, {
+    const body = {
       insurance_company: ins.insurance_company || null,
       insurance_policy_number: ins.insurance_policy_number || null,
       insurance_valid_until: ins.insurance_valid_until || null,
-    })
-    setEditingIns(false)
+    }
+    if (policyFile) body.insurance_document_url = await uploadDocFile(condoId, policyFile)
+    else if (removePolicy) body.insurance_document_url = null
+    await api.put(`${base}/insurance`, body)
+    setEditingIns(false); setPolicyFile(null); setRemovePolicy(false)
   }, `Seguro da fração ${fraction.identifier} guardado.`)
 
   const typeLabel = (TYPES.find(([v]) => v === fraction.fraction_type) || [null, fraction.fraction_type])[1]
@@ -285,9 +299,23 @@ function FractionCard({ fraction, condoId, expanded, onToggle, editing, onEdit, 
                   <input type="date" value={ins.insurance_valid_until || ''} onChange={(e) => setIns({ ...ins, insurance_valid_until: e.target.value })} />
                 </div>
               </div>
+              <div className="field" style={{ margin: 0 }}>
+                <label htmlFor={`policy-${fraction.id}`}>Apólice (ficheiro)</label>
+                {fraction.has_insurance_document && !policyFile && !removePolicy ? (
+                  <div className="row" style={{ gap: '.5rem', alignItems: 'center' }}>
+                    <button type="button" className="btn secondary small" onClick={openPolicy}>Ver apólice atual</button>
+                    <FilePicker id={`policy-${fraction.id}`} accept={DOC_ACCEPT} file={null} onFile={pickPolicy} label="Substituir" emptyText="" />
+                    <button type="button" className="btn secondary small" onClick={() => setRemovePolicy(true)}>Remover</button>
+                  </div>
+                ) : (
+                  <FilePicker id={`policy-${fraction.id}`} accept={DOC_ACCEPT} file={policyFile} onFile={pickPolicy} disabled={busy}
+                    emptyText={removePolicy ? 'A apólice atual vai ser removida ao guardar' : 'Nenhuma apólice anexada'}
+                    hint={`PDF, imagem ou Word. Máximo ${DOC_MAX_MB} MB. O ficheiro fica privado — só a administração e o proprietário o podem abrir.`} />
+                )}
+              </div>
               <div className="row">
                 <button className="btn small" disabled={busy} onClick={saveIns}>{busy ? 'A guardar…' : 'Guardar seguro'}</button>
-                <button className="btn secondary small" onClick={() => setEditingIns(false)}>Cancelar</button>
+                <button className="btn secondary small" onClick={() => { setEditingIns(false); setPolicyFile(null); setRemovePolicy(false) }}>Cancelar</button>
               </div>
             </div>
           ) : (
@@ -298,7 +326,10 @@ function FractionCard({ fraction, condoId, expanded, onToggle, editing, onEdit, 
                   ? `${fraction.insurance_company}${fraction.insurance_policy_number ? ` (apólice ${fraction.insurance_policy_number})` : ''}${fraction.insurance_valid_until ? ` · válido até ${new Date(fraction.insurance_valid_until).toLocaleDateString('pt-PT')}` : ''}`
                   : 'não registado'}
               </span>
-              <button className="btn secondary small" onClick={() => setEditingIns(true)}>Editar seguro</button>
+              <div className="row" style={{ gap: '.4rem' }}>
+                {fraction.has_insurance_document && <button className="btn secondary small" onClick={openPolicy}>Ver apólice</button>}
+                <button className="btn secondary small" onClick={() => setEditingIns(true)}>{fraction.has_insurance_document || fraction.insurance_company ? 'Editar seguro' : 'Adicionar seguro'}</button>
+              </div>
             </div>
           )}
         </div>

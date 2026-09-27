@@ -98,6 +98,22 @@ def _serialize(db: Session, occs: list, user: models.User, is_admin: bool) -> li
     return [_to_out(o, user, is_admin, fractions, reporters) for o in occs]
 
 
+# ---------- Frações que se podem indicar ao reportar ----------
+@router.get("/fractions")
+def reportable_fractions(
+    condominium_id: str,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Admin: todas as frações ativas. Condómino: só as suas frações neste condomínio."""
+    condo = _get_condo(db, condominium_id)
+    is_admin = _require_member(db, user, condo)
+    q = db.query(models.Fraction).filter(models.Fraction.condominium_id == condominium_id, models.Fraction.is_active == True)  # noqa: E712
+    if not is_admin:
+        q = q.filter(models.Fraction.id.in_(_owner_fraction_ids_in_condo(db, user, condominium_id)))
+    return [{"id": f.id, "identifier": f.identifier} for f in q.order_by(models.Fraction.identifier).all()]
+
+
 # ---------- Foto ----------
 @router.post("/photo")
 async def upload_occurrence_photo(

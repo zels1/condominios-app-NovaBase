@@ -118,6 +118,7 @@ class FractionOut(ORMBase):
     insurance_company: Optional[str] = None
     insurance_policy_number: Optional[str] = None
     insurance_valid_until: Optional[date] = None
+    has_insurance_document: bool = False
 
 
 class FractionOwnerCreate(BaseModel):
@@ -150,6 +151,7 @@ class OwnerFractionLink(BaseModel):
     insurance_company: Optional[str] = None
     insurance_policy_number: Optional[str] = None
     insurance_valid_until: Optional[date] = None
+    has_insurance_document: bool = False
 
 
 class OwnerDirectoryEntry(BaseModel):
@@ -198,6 +200,7 @@ class FractionInsuranceUpdate(BaseModel):
     insurance_company: Optional[str] = None
     insurance_policy_number: Optional[str] = None
     insurance_valid_until: Optional[date] = None
+    insurance_document_url: Optional[str] = None  # referência devolvida pelo upload (sb://…); null = remover
 
 
 # ---------- Budget ----------
@@ -335,8 +338,9 @@ class ContractCreate(BaseModel):
     title: str
     start_date: Optional[date] = None
     end_date: Optional[date] = None
-    renewal_alert_days: int = 30
-    annual_value: Optional[float] = None
+    renewal_alert_days: int = Field(30, ge=0, le=365)
+    annual_value: Optional[float] = Field(None, ge=0)
+    document_url: Optional[str] = None  # referência do upload (sb://…) ou link externo
 
 
 class ContractOut(ORMBase):
@@ -347,6 +351,8 @@ class ContractOut(ORMBase):
     end_date: Optional[date] = None
     renewal_alert_days: int
     annual_value: Optional[float] = None
+    has_document: bool = False
+    supplier_name: Optional[str] = None
 
 
 class ExpenseCreate(BaseModel):

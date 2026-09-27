@@ -58,7 +58,7 @@ def decode_supabase_token(token: str) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Token inválido: {e}")
 
 
-def get_current_user(
+def _resolve_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ) -> models.User:
@@ -108,6 +108,20 @@ def get_current_user(
                 link.user_id = user.id
                 link.invited_email = None
             db.commit()
+    return user
+
+
+ACCOUNT_DISABLED = "A tua conta foi desativada pela administração do condomínio. Se achas que é um engano, contacta a administração."
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+) -> models.User:
+    """Utilizador autenticado. Contas desativadas pelo administrador não conseguem usar a app."""
+    user = _resolve_user(credentials, db)
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ACCOUNT_DISABLED)
     return user
 
 

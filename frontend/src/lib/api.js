@@ -84,6 +84,20 @@ async function download(path, fallbackName = 'ficheiro') {
   setTimeout(() => URL.revokeObjectURL(url), 10000)
 }
 
+// Abre um ficheiro privado: pede à API um link temporário e abre-o num separador novo.
+// A janela é aberta logo no clique (senão o browser bloqueia-a como pop-up).
+async function openFile(path) {
+  const win = window.open('', '_blank')
+  try {
+    const { url } = await request(path)
+    if (win) win.location.href = url
+    else window.location.href = url
+  } catch (err) {
+    if (win) win.close()
+    throw err
+  }
+}
+
 export const api = {
   get: (path, params) => request(path, { params }),
   post: (path, body) => request(path, { method: 'POST', body }),
@@ -91,4 +105,5 @@ export const api = {
   del: (path) => request(path, { method: 'DELETE' }),
   upload,
   download,
+  openFile,
 }

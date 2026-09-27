@@ -8,7 +8,8 @@ from sqlalchemy import func
 
 from .. import models, schemas
 from ..database import get_db
-from ..auth import get_current_user, require_condo_admin
+from ..auth import get_current_user, require_condo_admin, require_condo_member, get_user_fraction_ids
+from ..services.storage import signed_url, delete_file, StorageError, STORAGE_PREFIX, DOCUMENT_BUCKET
 from ..services.purge import delete_fraction, fraction_summary, delete_orphan_owners
 
 
@@ -100,16 +101,41 @@ def update_fraction_insurance(
     user: models.User = Depends(require_condo_admin),
 ):
     """Atualiza só o seguro da fração (usado na ficha do condómino)."""
-    fraction = db.query(models.Fraction).filter(
-        models.Fraction.id == fraction_id, models.Fraction.condominium_id == condominium_id
-    ).first()
-    if not fraction:
-        raise HTTPException(404, "Fração não encontrada.")
-    for k, v in payload.model_dump().items():
+    fraction = _get_fraction(db, condominium_id, fraction_id)
+    changes = payload.model_dump(exclude_unset=True)  # só mexe no que foi enviado
+    old_doc = fraction.insurance_document_url
+    if "insurance_document_url" in changes:
+        ref = (changes["insurance_document_url"] or "").strip() or None
+        if ref and not ref.startswith(f"{STORAGE_PREFIX}{DOCUMENT_BUCKET}/{condominium_id}/"):
+            raise HTTPException(400, "Ficheiro da apólice inválido.")
+        changes["insurance_document_url"] = ref
+    for k, v in changes.items():
         setattr(fraction, k, (v.strip() or None) if isinstance(v, str) else v)
     db.commit()
     db.refresh(fraction)
+    if old_doc and old_doc != fraction.insurance_document_url:
+        delete_file(old_doc)  # apólice substituída ou removida: apaga o ficheiro antigo
     return fraction
+
+
+@router.get("/{fraction_id}/insurance/document")
+def open_insurance_document(
+    condominium_id: str,
+    fraction_id: str,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Link temporário (1 hora) para abrir a apólice. Admin ou proprietário da fração."""
+    is_admin = require_condo_member(db, user, condominium_id)
+    fraction = _get_fraction(db, condominium_id, fraction_id)
+    if not is_admin and fraction.id not in get_user_fraction_ids(db, user):
+        raise HTTPException(403, "Sem acesso a esta fração.")
+    if not fraction.insurance_document_url:
+        raise HTTPException(404, "Esta fração não tem a apólice anexada.")
+    try:
+        return {"url": signed_url(fraction.insurance_document_url, expires_in=3600)}
+    except StorageError as e:
+        raise HTTPException(503, str(e))
 
 
 @router.get("/{fraction_id}/delete-preview")

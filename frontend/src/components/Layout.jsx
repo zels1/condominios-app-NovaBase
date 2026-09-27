@@ -37,7 +37,22 @@ export default function Layout() {
   useEffect(() => { setMenuOpen(false) }, [location.pathname])
 
   if (loading) return <div className="empty">A carregar…</div>
-  if (error) return <div className="empty msg error">Erro a carregar dados: {error}</div>
+  if (error) {
+    const disabled = /desativada/i.test(error)
+    return (
+      <div className="auth-screen">
+        <div className="card auth-card" style={{ textAlign: 'center' }}>
+          <div className="auth-brand"><DomvusLogo size={30} /></div>
+          <h2 style={{ marginTop: 0 }}>{disabled ? 'Acesso desativado' : 'Não foi possível carregar os dados'}</h2>
+          <p className="hint" style={{ fontSize: '.95rem' }}>{error}</p>
+          <div className="row" style={{ justifyContent: 'center', gap: '.5rem' }}>
+            {!disabled && <button className="btn" onClick={() => window.location.reload()}>Tentar outra vez</button>}
+            <button className={`btn${disabled ? '' : ' secondary'}`} onClick={signOut}>Terminar sessão</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (isAdmin && condominiums.length === 0) {
     return <Navigate to="/configurar" replace />
