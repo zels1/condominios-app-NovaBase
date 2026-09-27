@@ -163,7 +163,7 @@ export default function Maintenance() {
           <div className="field">
             <label htmlFor="occ-photo">Foto (opcional, mas ajuda muito o administrador)</label>
             <FilePicker
-              id="occ-photo" accept="image/*" icon="📷" label="Tirar ou escolher foto"
+              id="occ-photo" accept="image/*" label="Escolher foto" emptyText="Nenhuma foto escolhida"
               disabled={photoBusy || busy} onFile={handlePhotoPick}
               file={photo ? { name: photo.originalSize > photo.blob.size ? 'Foto (reduzida para enviar)' : 'Foto', size: photo.blob.size } : null}
               preview={photo?.preview}

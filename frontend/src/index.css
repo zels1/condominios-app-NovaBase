@@ -242,27 +242,7 @@ tr:last-child td { border-bottom: none; }
 .auth-brand { display: flex; flex-direction: column; align-items: center; gap: .5rem; margin-bottom: 1.2rem; text-align: center; }
 .auth-brand .hint { margin: 0; }
 
-/* Escolher ficheiro (botão + arrastar e largar) */
-.file-picker { position: relative; display: flex; flex-direction: column; gap: .5rem; padding: .9rem; border: 1.5px dashed var(--border); border-radius: 12px; background: var(--bg); transition: border-color .15s, background .15s; }
-.file-picker.dragging { border-color: var(--primary); background: var(--primary-soft); }
-.file-picker.has-file { border-style: solid; background: var(--surface); }
-.file-picker.disabled { opacity: .6; }
-.file-picker-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.file-picker-input:focus-visible + * .btn, .file-picker-input:focus-visible + * label { outline: 2px solid var(--primary); outline-offset: 2px; }
-.file-picker-empty { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
-.file-picker-button { display: inline-flex; align-items: center; gap: .45em; cursor: pointer; }
-.file-picker-drop { color: var(--text-muted); font-size: .88rem; }
-.file-picker-chosen { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
-.file-picker-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
-.file-picker-icon { font-size: 1.8rem; }
-.file-picker-info { flex: 1; min-width: 120px; display: flex; flex-direction: column; }
-.file-picker-name { font-weight: 600; overflow-wrap: anywhere; }
-.file-picker-size { font-size: .82rem; color: var(--text-muted); }
-.file-picker-actions { display: flex; gap: .4rem; }
-.file-picker-actions label { cursor: pointer; }
-.file-picker-hint { font-size: .8rem; color: var(--text-muted); }
-label.btn[aria-disabled="true"] { pointer-events: none; opacity: .6; }
-@media (max-width: 780px) { .file-picker-drop { display: none; } }
+
 
 /* Tabelas ordenáveis */
 .sort-th { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: .35em; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; white-space: nowrap; }
@@ -287,6 +267,55 @@ td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-n
 .legend .dot.in { background: var(--primary); }
 .legend .dot.out { background: var(--danger); opacity: .75; }
 @media (max-width: 780px) { .month-bars, .month-bars-head { display: none; } }
-.file-picker label.btn { color: #fff; font-weight: 600; font-size: .92rem; margin: 0; text-transform: none; letter-spacing: normal; }
-.file-picker label.btn.secondary { color: var(--text); }
-.file-picker label.btn.small { font-size: .85rem; }
+
+/* Novo condomínio */
+.setup-screen { min-height: 100vh; background: var(--bg); padding: 1.2rem clamp(1rem, 4vw, 2.4rem) 3rem; }
+.setup-brand { max-width: 1000px; margin: 0 auto 1rem; }
+.setup-form { max-width: 1000px; margin: 0 auto; }
+.setup-rows { display: flex; flex-direction: column; gap: .4rem; margin-top: .6rem; }
+.setup-row { display: grid; grid-template-columns: 1fr 1fr .9fr 1.4fr 1.6fr 1.1fr auto; gap: .4rem; align-items: center; }
+.setup-row input, .setup-row select { width: 100%; min-width: 0; padding: .5em .6em; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: .9rem; background: var(--surface); }
+.setup-head { font-size: .72rem; font-weight: 650; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; }
+@media (max-width: 860px) {
+  .setup-head { display: none; }
+  .setup-row { grid-template-columns: 1fr 1fr 1fr; padding: .6rem; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+  .setup-row > :nth-child(4), .setup-row > :nth-child(5) { grid-column: span 3; }
+  .setup-row > :nth-child(6) { grid-column: span 2; }
+}
+
+/* Logótipo como o original: bloco azul-marinho */
+.domvus-badge { display: inline-flex; align-items: center; justify-content: center; background: #0D274C; border-radius: 10px; padding: .55rem .8rem .6rem; }
+.domvus-badge.stacked { padding: 1.4rem 2rem 1.5rem; border-radius: 14px; }
+.sidebar .brand { width: 100%; }
+.sidebar .brand .domvus-badge { width: 100%; justify-content: flex-start; }
+.auth-brand .domvus-badge.stacked { width: 100%; }
+.setup-brand .domvus-badge { padding: .5rem .9rem; }
+@media (max-width: 780px) {
+  .sidebar .brand { width: auto; }
+  .sidebar .brand .domvus-badge { padding: .4rem .65rem .45rem; }
+}
+
+/* Escolher ficheiro — mesmo aspeto dos outros botões secundários */
+.file-picker { position: relative; display: flex; flex-direction: column; gap: .35rem; border-radius: 10px; transition: background .15s, box-shadow .15s; }
+.file-picker.dragging { background: var(--primary-soft); box-shadow: 0 0 0 2px var(--primary); }
+.file-picker.disabled { opacity: .6; }
+.file-picker-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.file-picker-input:focus-visible + .file-picker-row label.btn { outline: 2px solid var(--primary); outline-offset: 2px; }
+.file-picker-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.file-picker-row label.btn { margin: 0; cursor: pointer; font-size: inherit; font-weight: 600; color: var(--text); text-transform: none; letter-spacing: normal; }
+.file-picker-status { color: var(--text-muted); font-size: .9rem; min-width: 0; overflow-wrap: anywhere; }
+.file-picker-status strong { color: var(--text); font-weight: 600; }
+.file-picker-thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+.file-picker-hint { font-size: .8rem; color: var(--text-muted); }
+label.btn[aria-disabled="true"] { pointer-events: none; opacity: .6; }
+
+/* Quotas: juro de mora */
+.fee-cell { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: .35em; padding: .15em .4em; margin: -.15em -.4em; border-radius: 6px; white-space: nowrap; }
+.fee-cell:hover, .fee-cell.open { background: var(--primary-soft); color: var(--primary-dark); }
+.fee-cell:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.fee-cell .fee-edit { font-size: .8em; opacity: .45; }
+.fee-panel { display: flex; flex-direction: column; gap: .6rem; padding: .7rem .2rem; }
+.fee-facts { display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; font-size: .9rem; color: var(--text-muted); }
+.fee-facts strong { color: var(--text); }
+.file-picker-row label.btn { line-height: 1.2; }
+.file-picker-row label.btn.small { font-size: .85rem; }

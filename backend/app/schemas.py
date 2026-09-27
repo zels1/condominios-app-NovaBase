@@ -62,6 +62,21 @@ class CondominiumCreate(BaseModel):
     max_upload_mb: int = Field(5, ge=1, le=20)  # tamanho máximo das fotos, em MB
 
 
+class FractionSetup(BaseModel):
+    """Uma fração criada logo com o condomínio (e, opcionalmente, o seu proprietário)."""
+    identifier: str = Field(min_length=1, max_length=40)
+    permilagem: float = Field(gt=0)
+    fraction_type: str = "habitação"
+    owner_name: Optional[str] = None
+    owner_email: Optional[EmailStr] = None
+    owner_phone: Optional[str] = None
+
+
+class CondominiumSetup(CondominiumCreate):
+    """Criação de um condomínio já com as frações e proprietários."""
+    fractions: List[FractionSetup] = Field(default_factory=list, max_length=500)
+
+
 class CondominiumOut(ORMBase):
     id: str
     name: str
@@ -220,6 +235,7 @@ class QuotaOut(ORMBase):
     amount_paid: float
     status: str
     late_fee_waived: bool
+    late_fee_applied_at: Optional[datetime] = None
 
 
 class QuotaWithFraction(QuotaOut):
@@ -247,6 +263,11 @@ class PaymentOut(ORMBase):
 
 
 # ---------- Late fee config ----------
+class ManualLateFee(BaseModel):
+    amount: float = Field(ge=0, le=100000)
+    note: Optional[str] = None
+
+
 class LateFeeConfigUpdate(BaseModel):
     enabled: bool = True
     grace_period_days: int = 8

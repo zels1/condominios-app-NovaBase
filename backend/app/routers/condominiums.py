@@ -1,5 +1,6 @@
 """Gestão de condomínios: criação e listagem (o admin cria/gere; o condómino só vê os seus)."""
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -13,12 +14,44 @@ router = APIRouter(prefix="/condominiums", tags=["Condomínios"])
 
 @router.post("", response_model=schemas.CondominiumOut)
 def create_condominium(
-    payload: schemas.CondominiumCreate,
+    payload: schemas.CondominiumSetup,
     db: Session = Depends(get_db),
     user: models.User = Depends(require_admin),
 ):
-    condo = models.Condominium(**payload.model_dump(), admin_user_id=user.id)
+    """Cria o condomínio e, se vierem, as frações e os proprietários — tudo de uma vez
+    (se alguma coisa falhar, nada fica criado)."""
+    data = payload.model_dump(exclude={"fractions"})
+    condo = models.Condominium(**data, admin_user_id=user.id)
     db.add(condo)
+    db.flush()
+
+    seen = set()
+    for i, f in enumerate(payload.fractions, start=1):
+        ident = f.identifier.strip()
+        if ident.lower() in seen:
+            db.rollback()
+            raise HTTPException(400, f"A fração \"{ident}\" aparece repetida.")
+        seen.add(ident.lower())
+        fraction = models.Fraction(condominium_id=condo.id, identifier=ident, permilagem=f.permilagem,
+                                   fraction_type=f.fraction_type or "habitação")
+        db.add(fraction)
+        db.flush()
+        name = (f.owner_name or "").strip()
+        if f.owner_email:
+            email = f.owner_email.strip().lower()
+            owner = db.query(models.User).filter(func.lower(models.User.email) == email).first()
+            if owner is None:
+                if not name:
+                    db.rollback()
+                    raise HTTPException(400, f"Fração {ident}: indica o nome do proprietário ({email}).")
+                owner = models.User(email=email, full_name=name, phone=(f.owner_phone or "").strip() or None,
+                                    role=models.UserRole.owner, is_active=True)
+                db.add(owner)
+                db.flush()
+            db.add(models.FractionOwner(fraction_id=fraction.id, user_id=owner.id, ownership_share=1, is_primary_contact=True))
+        elif name:
+            db.rollback()
+            raise HTTPException(400, f"Fração {ident}: indica também o email de {name} (é com ele que vai entrar na app).")
     db.commit()
     db.refresh(condo)
     return condo

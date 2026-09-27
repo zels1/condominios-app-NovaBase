@@ -20,6 +20,38 @@ def _round2(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def compute_late_fee(config, quota) -> Decimal:
+    """Juro que a regra do condomínio daria a esta quota (sobre o valor base ainda por pagar)."""
+    outstanding = Decimal(str(quota.base_amount)) - Decimal(str(quota.amount_paid or 0))
+    if outstanding <= 0 or not config:
+        return Decimal("0.00")
+    if config.fee_type == models.LateFeeType.fixed:
+        fee = Decimal(str(config.fee_value))
+    else:  # percentage
+        fee = outstanding * (Decimal(str(config.fee_value)) / Decimal("100"))
+    fee = _round2(fee)
+    if config.max_fee_amount is not None:
+        fee = min(fee, Decimal(str(config.max_fee_amount)))
+    return fee
+
+
+def recompute_status(quota, as_of: date = None) -> None:
+    """Atualiza o estado da quota a partir do que já foi pago (base + juro)."""
+    as_of = as_of or date.today()
+    if quota.status == models.QuotaStatus.waived:
+        return
+    total = Decimal(str(quota.base_amount)) + Decimal(str(quota.late_fee_amount or 0))
+    paid = Decimal(str(quota.amount_paid or 0))
+    if paid >= total - Decimal("0.005"):
+        quota.status = models.QuotaStatus.paid
+    elif paid > 0:
+        quota.status = models.QuotaStatus.partially_paid
+    elif quota.due_date < as_of:
+        quota.status = models.QuotaStatus.overdue
+    else:
+        quota.status = models.QuotaStatus.pending
+
+
 def apply_late_fees_for_condominium(db: Session, condominium_id: str, as_of: date = None) -> dict:
     as_of = as_of or date.today()
 
@@ -37,7 +69,7 @@ def apply_late_fees_for_condominium(db: Session, condominium_id: str, as_of: dat
         .join(models.Fraction)
         .filter(
             models.Fraction.condominium_id == condominium_id,
-            models.Quota.status.in_([models.QuotaStatus.pending, models.QuotaStatus.overdue]),
+            models.Quota.status.in_([models.QuotaStatus.pending, models.QuotaStatus.overdue, models.QuotaStatus.partially_paid]),
             models.Quota.late_fee_applied_at.is_(None),
             models.Quota.late_fee_waived == False,  # noqa: E712
         )
@@ -50,22 +82,13 @@ def apply_late_fees_for_condominium(db: Session, condominium_id: str, as_of: dat
         if days_overdue <= config.grace_period_days:
             continue
 
-        outstanding = Decimal(str(quota.base_amount)) - Decimal(str(quota.amount_paid))
-        if outstanding <= 0:
+        fee = compute_late_fee(config, quota)
+        if fee <= 0:
             continue
-
-        if config.fee_type == models.LateFeeType.fixed:
-            fee = Decimal(str(config.fee_value))
-        else:  # percentage
-            fee = outstanding * (Decimal(str(config.fee_value)) / Decimal("100"))
-
-        fee = _round2(fee)
-        if config.max_fee_amount is not None:
-            fee = min(fee, Decimal(str(config.max_fee_amount)))
 
         quota.late_fee_amount = fee
         quota.late_fee_applied_at = datetime.utcnow()
-        quota.status = models.QuotaStatus.overdue
+        recompute_status(quota, as_of)
         applied.append(quota)
 
     if applied:
@@ -89,6 +112,7 @@ def waive_late_fee(db: Session, quota_id: str) -> models.Quota:
         raise ValueError("Quota não encontrada.")
     quota.late_fee_amount = Decimal("0.00")
     quota.late_fee_waived = True
+    recompute_status(quota)
     db.commit()
     db.refresh(quota)
     return quota

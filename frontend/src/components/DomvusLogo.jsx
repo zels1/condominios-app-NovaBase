@@ -19,12 +19,16 @@ export function DomvusMark({ size = 32, variant = 'dark', title }) {
   )
 }
 
-export default function DomvusLogo({ size = 30, variant = 'dark', stacked = false, className = '' }) {
-  const c = COLORS[variant] || COLORS.dark
-  return (
-    <span className={`domvus-logo${stacked ? ' stacked' : ''} ${className}`} aria-label="Domvus" role="img">
+// Logótipo tal como o original: fundo azul-marinho, prédios claros com o lado azul e
+// a palavra "domvus" a branco. badge={false} desenha só o símbolo e a palavra, sem fundo.
+export default function DomvusLogo({ size = 30, stacked = false, badge = true, variant = 'light', className = '' }) {
+  const c = COLORS[variant] || COLORS.light
+  const logo = (
+    <span className={`domvus-logo${stacked ? ' stacked' : ''}`} aria-hidden={badge ? true : undefined}>
       <DomvusMark size={stacked ? size * 1.6 : size} variant={variant} />
       <span className="domvus-wordmark" style={{ color: c.text, fontSize: stacked ? size * 1.15 : size * 0.82 }} aria-hidden="true">domvus</span>
     </span>
   )
+  if (!badge) return <span className={className} role="img" aria-label="Domvus">{logo}</span>
+  return <span className={`domvus-badge${stacked ? ' stacked' : ''} ${className}`} role="img" aria-label="Domvus">{logo}</span>
 }

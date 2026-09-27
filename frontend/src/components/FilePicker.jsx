@@ -6,10 +6,10 @@ function formatSize(bytes) {
   return `${(bytes / 1048576).toLocaleString('pt-PT', { maximumFractionDigits: 1 })} MB`
 }
 
-// Escolha de ficheiro com botão bonito + arrastar e largar.
-// onFile(file|null) é chamado com o ficheiro escolhido (ou null ao remover).
+// Escolha de ficheiro com um botão igual aos restantes botões da app.
+// Também aceita arrastar e largar o ficheiro em cima. onFile(file|null).
 export default function FilePicker({
-  accept, onFile, file, disabled, label = 'Escolher ficheiro', icon = '📎',
+  accept, onFile, file, disabled, label = 'Escolher ficheiro', emptyText = 'Nenhum ficheiro escolhido',
   hint, preview, id: idProp, capture,
 }) {
   const autoId = useId()
@@ -22,47 +22,23 @@ export default function FilePicker({
     onFile(f || null)
   }
 
-  function onDrop(e) {
-    e.preventDefault()
-    setDragging(false)
-    if (disabled) return
-    const f = e.dataTransfer.files?.[0]
-    if (f) pick(f)
-  }
-
   return (
     <div
-      className={`file-picker${dragging ? ' dragging' : ''}${file ? ' has-file' : ''}${disabled ? ' disabled' : ''}`}
+      className={`file-picker${dragging ? ' dragging' : ''}${disabled ? ' disabled' : ''}`}
       onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragging(true) }}
       onDragLeave={() => setDragging(false)}
-      onDrop={onDrop}
+      onDrop={(e) => { e.preventDefault(); setDragging(false); if (!disabled && e.dataTransfer.files?.[0]) pick(e.dataTransfer.files[0]) }}
     >
-      <input
-        ref={inputRef} id={id} type="file" accept={accept} capture={capture} disabled={disabled}
-        className="file-picker-input" onChange={(e) => pick(e.target.files?.[0])}
-      />
-      {file ? (
-        <div className="file-picker-chosen">
-          {preview
-            ? <img src={preview} alt="" className="file-picker-thumb" />
-            : <span className="file-picker-icon" aria-hidden="true">📄</span>}
-          <div className="file-picker-info">
-            <span className="file-picker-name">{file.name || 'Ficheiro'}</span>
-            <span className="file-picker-size">{formatSize(file.size)}</span>
-          </div>
-          <div className="file-picker-actions">
-            <label htmlFor={id} className="btn secondary small" aria-disabled={disabled}>Trocar</label>
-            <button type="button" className="btn secondary small" onClick={() => pick(null)} disabled={disabled}>Remover</button>
-          </div>
-        </div>
-      ) : (
-        <div className="file-picker-empty">
-          <label htmlFor={id} className="btn file-picker-button" aria-disabled={disabled}>
-            <span aria-hidden="true">{icon}</span> {label}
-          </label>
-          <span className="file-picker-drop">ou arrasta o ficheiro para aqui</span>
-        </div>
-      )}
+      <input ref={inputRef} id={id} type="file" accept={accept} capture={capture} disabled={disabled}
+        className="file-picker-input" onChange={(e) => pick(e.target.files?.[0])} />
+      <div className="file-picker-row">
+        {preview && file && <img src={preview} alt="" className="file-picker-thumb" />}
+        <label htmlFor={id} className={`btn secondary${file ? " small" : ""}`} aria-disabled={disabled}>{file ? "Trocar" : label}</label>
+        <span className="file-picker-status">
+          {file ? <><strong>{file.name || 'Ficheiro'}</strong> · {formatSize(file.size)}</> : emptyText}
+        </span>
+        {file && <button type="button" className="btn secondary small" onClick={() => pick(null)} disabled={disabled}>Remover</button>}
+      </div>
       {hint && <span className="file-picker-hint">{hint}</span>}
     </div>
   )
