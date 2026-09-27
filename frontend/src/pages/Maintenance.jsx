@@ -7,6 +7,8 @@ const STATUS_FLOW = ['reported', 'acknowledged', 'in_progress', 'resolved', 'clo
 const NEXT_LABEL = { reported: 'A caminho', acknowledged: 'A caminho', in_progress: 'Resolvido', resolved: 'Fechar' }
 const PRIORITY_LABEL = { baixa: 'Prioridade baixa', normal: 'Prioridade normal', alta: 'Prioridade alta', urgente: 'Urgente' }
 const PRIORITY_CLASS = { alta: 'warn', urgente: 'danger' }
+const PRIORITY_RANK = { urgente: 0, alta: 1, normal: 2, baixa: 3 }
+const STATUS_TEXT = { reported: 'Recebido', acknowledged: 'A caminho', in_progress: 'A caminho', resolved: 'Resolvido', closed: 'Fechada' }
 const DEFAULT_MAX_MB = 5
 const MAX_DIMENSION = 1600 // px — suficiente para ver bem a avaria, e muito mais leve
 
@@ -38,6 +40,9 @@ export default function Maintenance() {
   const [occurrences, setOccurrences] = useState([])
   const [fractions, setFractions] = useState([])
   const [filter, setFilter] = useState('all') // all | open | mine
+  const [sortBy, setSortBy] = useState('priority') // priority | recent
+  const [replies, setReplies] = useState({}) // occurrence id -> texto da resposta
+  const [replyBusy, setReplyBusy] = useState(null)
   const [form, setForm] = useState({ title: '', description: '', fraction_id: '', priority: 'normal' })
   const [photo, setPhoto] = useState(null) // { blob, preview, originalSize }
   const [photoBusy, setPhotoBusy] = useState(false)
@@ -111,13 +116,23 @@ export default function Maintenance() {
     setBusy(false)
   }
 
-  async function advance(occ) {
-    const idx = STATUS_FLOW.indexOf(occ.status)
-    const next = STATUS_FLOW[Math.min(idx + 1, STATUS_FLOW.length - 1)]
+  // Resposta do administrador (com ou sem mudança de estado)
+  async function respond(occ, advanceStatus) {
+    const note = (replies[occ.id] || '').trim()
+    let status = occ.status
+    if (advanceStatus) {
+      const idx = STATUS_FLOW.indexOf(occ.status)
+      status = STATUS_FLOW[Math.min(idx + 1, STATUS_FLOW.length - 1)]
+    }
+    if (!advanceStatus && !note) return
+    setReplyBusy(occ.id)
+    setError(null)
     try {
-      await api.post(`/condominiums/${selectedCondo.id}/occurrences/${occ.id}/updates`, { status: next })
-      load()
+      await api.post(`/condominiums/${selectedCondo.id}/occurrences/${occ.id}/updates`, { status, note: note || undefined })
+      setReplies((r) => ({ ...r, [occ.id]: '' }))
+      await load()
     } catch (err) { setError(err.message) }
+    setReplyBusy(null)
   }
 
   if (!selectedCondo) return null
@@ -128,7 +143,13 @@ export default function Maintenance() {
     open: occurrences.filter(isOpen).length,
     mine: occurrences.filter((o) => o.reported_by_me).length,
   }
-  const visible = occurrences.filter((o) => (filter === 'open' ? isOpen(o) : filter === 'mine' ? o.reported_by_me : true))
+  const byDate = (a, b) => b.created_at.localeCompare(a.created_at)
+  const visible = occurrences
+    .filter((o) => (filter === 'open' ? isOpen(o) : filter === 'mine' ? o.reported_by_me : true))
+    .sort((a, b) => sortBy === 'recent'
+      ? byDate(a, b)
+      // por prioridade: em aberto primeiro, depois urgente → baixa, depois as mais recentes
+      : (isOpen(b) - isOpen(a)) || ((PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9)) || byDate(a, b))
 
   return (
     <div className="stack">
@@ -200,6 +221,13 @@ export default function Maintenance() {
           ))}
         </div>
       </div>
+      <div className="row" style={{ alignItems: 'center', gap: '.5rem', marginTop: '-.4rem' }}>
+        <label htmlFor="occ-sort" className="hint" style={{ margin: 0 }}>Ordenar por</label>
+        <select id="occ-sort" value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="compact-select">
+          <option value="priority">Prioridade (urgentes primeiro)</option>
+          <option value="recent">Mais recentes</option>
+        </select>
+      </div>
 
       <div className="stack">
         {visible.map((o) => (
@@ -239,10 +267,38 @@ export default function Maintenance() {
               })}
             </div>
 
+            {(() => {
+              const answers = (o.updates || []).filter((u) => u.note).sort((a, b) => a.created_at.localeCompare(b.created_at))
+              if (!answers.length) return null
+              return (
+                <div className="occ-replies">
+                  <span className="occ-replies-title">Respostas da administração</span>
+                  {answers.map((u) => (
+                    <div key={u.id} className="occ-reply">
+                      <p style={{ margin: 0, whiteSpace: 'pre-line' }}>{u.note}</p>
+                      <span className="hint" style={{ margin: 0 }}>
+                        {new Date(u.created_at).toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' })} · estado: {STATUS_TEXT[u.status] || u.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+
             {isAdmin && o.status !== 'closed' && (
-              <button className="btn secondary small" style={{ marginTop: '.6rem' }} onClick={() => advance(o)}>
-                Avançar para "{NEXT_LABEL[o.status]}"
-              </button>
+              <div className="occ-reply-box">
+                <label htmlFor={`reply-${o.id}`} className="hint" style={{ margin: 0, fontWeight: 600 }}>Responder ao condómino</label>
+                <textarea id={`reply-${o.id}`} rows={2} value={replies[o.id] || ''} placeholder="Ex: O técnico vem na quinta-feira de manhã."
+                  onChange={(e) => setReplies({ ...replies, [o.id]: e.target.value })} />
+                <div className="row" style={{ gap: '.4rem', flexWrap: 'wrap' }}>
+                  <button type="button" className="btn small" disabled={replyBusy === o.id || !(replies[o.id] || '').trim()} onClick={() => respond(o, false)}>
+                    Enviar resposta
+                  </button>
+                  <button type="button" className="btn secondary small" disabled={replyBusy === o.id} onClick={() => respond(o, true)}>
+                    {(replies[o.id] || '').trim() ? `Enviar e marcar "${NEXT_LABEL[o.status]}"` : `Marcar como "${NEXT_LABEL[o.status]}"`}
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         ))}

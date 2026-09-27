@@ -215,3 +215,21 @@ tr:last-child td { border-bottom: none; }
 .doc-main { flex: 1; min-width: 0; }
 .doc-title { font-weight: 600; overflow-wrap: anywhere; }
 .doc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .25rem; font-size: .8rem; color: var(--text-muted); }
+
+/* Ocorrências: respostas da administração */
+.occ-replies { margin-top: .8rem; padding: .7rem .8rem; border-radius: 10px; background: var(--primary-soft); display: flex; flex-direction: column; gap: .5rem; }
+.occ-replies-title { font-size: .78rem; font-weight: 700; color: var(--primary-dark); text-transform: uppercase; letter-spacing: .03em; }
+.occ-reply { border-left: 3px solid var(--primary); padding-left: .6rem; }
+.occ-reply-box { margin-top: .8rem; display: flex; flex-direction: column; gap: .4rem; }
+.occ-reply-box textarea { width: 100%; box-sizing: border-box; padding: .6em .7em; border-radius: 8px; border: 1px solid var(--border); font: inherit; resize: vertical; }
+.compact-select { padding: .4em .6em; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); font: inherit; font-size: .88rem; }
+
+/* Frações */
+.fraction-card { padding-top: .9rem; padding-bottom: .9rem; }
+.fraction-panel { margin-top: .8rem; padding-top: .8rem; border-top: 1px solid var(--border); }
+.transfer-box { padding: .8rem; border-radius: 10px; border: 1px dashed var(--border); background: var(--bg); }
+.inline-input { flex: 1; min-width: 200px; padding: .5em .7em; border-radius: 8px; border: 1px solid var(--border); font: inherit; }
+
+/* Zona de perigo (eliminar condomínio) */
+.danger-zone { border: 1px solid var(--danger); }
+.danger-zone h3 { color: var(--danger); }

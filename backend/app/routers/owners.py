@@ -10,6 +10,7 @@ from .. import models, schemas
 from ..database import get_db
 from ..auth import require_condo_admin
 from ..services.storage import update_auth_email, StorageError
+from ..services.purge import remove_owner_from_condo
 
 router = APIRouter(prefix="/condominiums/{condominium_id}/owners", tags=["Condóminos"])
 
@@ -236,3 +237,45 @@ def update_owner_profile(
     db.commit()
     db.refresh(target)
     return target
+
+
+@router.delete("/pending/{link_id}")
+def delete_pending_invite(
+    condominium_id: str,
+    link_id: str,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_condo_admin),
+):
+    link = (
+        db.query(models.FractionOwner)
+        .join(models.Fraction, models.FractionOwner.fraction_id == models.Fraction.id)
+        .filter(models.FractionOwner.id == link_id, models.Fraction.condominium_id == condominium_id,
+                models.FractionOwner.user_id.is_(None))
+        .first()
+    )
+    if not link:
+        raise HTTPException(404, "Convite não encontrado.")
+    db.delete(link)
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/{user_id}")
+def delete_owner(
+    condominium_id: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_condo_admin),
+):
+    """Elimina o condómino DESTE condomínio (tira-o de todas as frações daqui).
+    Se não tiver frações noutros condomínios nem histórico, a ficha é apagada.
+    As quotas e pagamentos ficam na fração (pertencem à fração, não à pessoa)."""
+    target = db.query(models.User).filter(models.User.id == user_id).first()
+    if not target:
+        raise HTTPException(404, "Condómino não encontrado.")
+    result = remove_owner_from_condo(db, user_id, condominium_id)
+    if result["fractions_unlinked"] == 0:
+        db.rollback()
+        raise HTTPException(404, "Este condómino não está associado a nenhuma fração deste condomínio.")
+    db.commit()
+    return {"ok": True, **result}

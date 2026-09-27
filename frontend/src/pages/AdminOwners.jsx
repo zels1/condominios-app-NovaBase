@@ -156,6 +156,25 @@ export default function AdminOwners() {
     setBusy(false)
   }
 
+  async function deleteOwner(o) {
+    const where = o.fractions.map((f) => f.fraction_identifier).join(', ')
+    const msg = o.is_pending
+      ? `Cancelar o convite para ${o.email}?`
+      : `Eliminar ${o.full_name} deste condomínio?\n\nDeixa de estar associado(a) a: ${where}.\n`
+        + 'As quotas e pagamentos ficam nas frações. Se não tiver frações noutros condomínios nem histórico, a ficha é apagada.'
+    if (!window.confirm(msg)) return
+    setError(null); setNotice(null)
+    try {
+      const path = o.is_pending ? `owners/pending/${o.id.replace('pending-', '')}` : `owners/${o.id}`
+      const res = await api.del(`/condominiums/${selectedCondo.id}/${path}`)
+      setNotice(o.is_pending ? 'Convite cancelado.'
+        : res.user_deleted ? `${o.full_name} foi eliminado(a) e a ficha apagada.`
+          : `${o.full_name} foi retirado(a) deste condomínio (a ficha mantém-se porque tem outras frações ou histórico).`)
+      if (editing === o.id) setEditing(null)
+      await load()
+    } catch (err) { setError(err.message) }
+  }
+
   async function removeFraction(fractionId, ownerLinkId) {
     if (!confirm('Remover esta associação a esta fração?')) return
     try {
@@ -311,9 +330,14 @@ export default function AdminOwners() {
                     ))}
                   </div>
                 </div>
-                <button className="btn secondary small" onClick={() => startEdit(o)} style={{ flexShrink: 0 }}>
-                  {o.is_pending ? 'Completar ficha' : 'Editar ficha'}
-                </button>
+                <div className="row" style={{ gap: '.4rem', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <button className="btn secondary small" onClick={() => startEdit(o)}>
+                    {o.is_pending ? 'Completar ficha' : 'Editar ficha'}
+                  </button>
+                  <button className="btn danger small" onClick={() => deleteOwner(o)}>
+                    {o.is_pending ? 'Cancelar convite' : 'Eliminar'}
+                  </button>
+                </div>
               </div>
             )}
           </div>

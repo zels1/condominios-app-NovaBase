@@ -171,6 +171,14 @@ class OwnerCreate(OwnerProfile):
     is_primary_contact: bool = True
 
 
+class FractionTransfer(BaseModel):
+    """Mudar o proprietário de uma fração (ex: venda): os proprietários atuais deixam de
+    estar associados e fica o novo."""
+    email: EmailStr
+    full_name: Optional[str] = None  # obrigatório se ainda não houver ficha com este email
+    phone: Optional[str] = None
+
+
 class FractionInsuranceUpdate(BaseModel):
     insurance_company: Optional[str] = None
     insurance_policy_number: Optional[str] = None

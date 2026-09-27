@@ -4,9 +4,21 @@ from sqlalchemy.orm import Session
 from typing import List
 from decimal import Decimal
 
+from sqlalchemy import func
+
 from .. import models, schemas
 from ..database import get_db
 from ..auth import get_current_user, require_condo_admin
+from ..services.purge import delete_fraction, fraction_summary, delete_orphan_owners
+
+
+def _get_fraction(db: Session, condominium_id: str, fraction_id: str) -> models.Fraction:
+    fraction = db.query(models.Fraction).filter(
+        models.Fraction.id == fraction_id, models.Fraction.condominium_id == condominium_id
+    ).first()
+    if not fraction:
+        raise HTTPException(404, "Fração não encontrada.")
+    return fraction
 
 router = APIRouter(prefix="/condominiums/{condominium_id}/fractions", tags=["Frações"])
 
@@ -63,13 +75,17 @@ def update_fraction(
     db: Session = Depends(get_db),
     user: models.User = Depends(require_condo_admin),
 ):
-    fraction = db.query(models.Fraction).filter(
-        models.Fraction.id == fraction_id, models.Fraction.condominium_id == condominium_id
+    fraction = _get_fraction(db, condominium_id, fraction_id)
+    # só altera os campos enviados (ex: mudar o identificador não apaga o seguro)
+    for k, v in payload.model_dump(exclude_unset=True).items():
+        setattr(fraction, k, v.strip() if isinstance(v, str) and k == "identifier" else v)
+    clash = db.query(models.Fraction).filter(
+        models.Fraction.condominium_id == condominium_id, models.Fraction.identifier == fraction.identifier,
+        models.Fraction.id != fraction.id,
     ).first()
-    if not fraction:
-        raise HTTPException(404, "Fração não encontrada.")
-    for k, v in payload.model_dump().items():
-        setattr(fraction, k, v)
+    if clash:
+        db.rollback()
+        raise HTTPException(409, f"Já existe outra fração com o identificador \"{fraction.identifier}\".")
     db.commit()
     db.refresh(fraction)
     return fraction
@@ -96,21 +112,63 @@ def update_fraction_insurance(
     return fraction
 
 
-@router.delete("/{fraction_id}")
-def deactivate_fraction(
+@router.get("/{fraction_id}/delete-preview")
+def preview_fraction_delete(
     condominium_id: str,
     fraction_id: str,
     db: Session = Depends(get_db),
     user: models.User = Depends(require_condo_admin),
 ):
-    fraction = db.query(models.Fraction).filter(
-        models.Fraction.id == fraction_id, models.Fraction.condominium_id == condominium_id
-    ).first()
-    if not fraction:
-        raise HTTPException(404, "Fração não encontrada.")
-    fraction.is_active = False
+    """O que se perde ao apagar esta fração (para mostrar antes de confirmar)."""
+    fraction = _get_fraction(db, condominium_id, fraction_id)
+    return {"identifier": fraction.identifier, **fraction_summary(db, fraction.id)}
+
+
+@router.delete("/{fraction_id}")
+def remove_fraction(
+    condominium_id: str,
+    fraction_id: str,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_condo_admin),
+):
+    """Apaga definitivamente a fração, com as quotas, pagamentos, votos e associações.
+    As ocorrências registadas nessa fração passam a 'zona comum'."""
+    fraction = _get_fraction(db, condominium_id, fraction_id)
+    summary = delete_fraction(db, fraction)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "deleted": summary}
+
+
+@router.post("/{fraction_id}/transfer")
+def transfer_fraction(
+    condominium_id: str,
+    fraction_id: str,
+    payload: schemas.FractionTransfer,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_condo_admin),
+):
+    """Muda o proprietário (ex: venda da fração). As quotas e o histórico ficam na fração."""
+    fraction = _get_fraction(db, condominium_id, fraction_id)
+    email = payload.email.strip().lower()
+    new_owner = db.query(models.User).filter(func.lower(models.User.email) == email).first()
+    if new_owner is None:
+        name = (payload.full_name or "").strip()
+        if not name:
+            raise HTTPException(400, "Ainda não existe ninguém com este email: indica também o nome do novo proprietário.")
+        new_owner = models.User(email=email, full_name=name, phone=(payload.phone or "").strip() or None,
+                                role=models.UserRole.owner, is_active=True)
+        db.add(new_owner)
+        db.flush()
+    old_links = db.query(models.FractionOwner).filter(models.FractionOwner.fraction_id == fraction.id).all()
+    old_user_ids = [l.user_id for l in old_links if l.user_id and l.user_id != new_owner.id]
+    for link in old_links:
+        db.delete(link)
+    db.flush()
+    db.add(models.FractionOwner(fraction_id=fraction.id, user_id=new_owner.id, ownership_share=1, is_primary_contact=True))
+    db.flush()
+    removed = delete_orphan_owners(db, old_user_ids)
+    db.commit()
+    return {"ok": True, "new_owner": new_owner.full_name, "previous_owners": len(old_user_ids), "previous_records_deleted": removed}
 
 
 # ---------- Proprietários ----------
@@ -138,7 +196,7 @@ def add_owner(
     owner_user_id = payload.user_id
     invited_email = None
     if not owner_user_id:
-        existing = db.query(models.User).filter(models.User.email == payload.email).first()
+        existing = db.query(models.User).filter(func.lower(models.User.email) == payload.email.strip().lower()).first()
         if existing:
             owner_user_id = existing.id
         else:
@@ -166,8 +224,9 @@ def list_owners(
     condominium_id: str,
     fraction_id: str,
     db: Session = Depends(get_db),
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(require_condo_admin),
 ):
+    _get_fraction(db, condominium_id, fraction_id)
     return db.query(models.FractionOwner).filter(models.FractionOwner.fraction_id == fraction_id).all()
 
 
@@ -179,9 +238,15 @@ def remove_owner(
     db: Session = Depends(get_db),
     user: models.User = Depends(require_condo_admin),
 ):
-    link = db.query(models.FractionOwner).filter(models.FractionOwner.id == owner_link_id).first()
+    _get_fraction(db, condominium_id, fraction_id)
+    link = db.query(models.FractionOwner).filter(
+        models.FractionOwner.id == owner_link_id, models.FractionOwner.fraction_id == fraction_id
+    ).first()
     if not link:
         raise HTTPException(404, "Associação não encontrada.")
+    user_id = link.user_id
     db.delete(link)
+    db.flush()
+    delete_orphan_owners(db, [user_id])
     db.commit()
     return {"ok": True}

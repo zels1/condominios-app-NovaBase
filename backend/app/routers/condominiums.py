@@ -5,7 +5,8 @@ from typing import List
 
 from .. import models, schemas
 from ..database import get_db
-from ..auth import get_current_user, require_admin, require_condo_admin
+from ..auth import get_current_user, require_admin, require_condo_admin, require_condo_member
+from ..services.purge import condominium_summary, delete_condominium, delete_storage_files
 
 router = APIRouter(prefix="/condominiums", tags=["Condomínios"])
 
@@ -45,6 +46,7 @@ def list_condominiums(
 
 @router.get("/{condominium_id}", response_model=schemas.CondominiumOut)
 def get_condominium(condominium_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    require_condo_member(db, user, condominium_id)
     condo = db.query(models.Condominium).filter(models.Condominium.id == condominium_id).first()
     if not condo:
         raise HTTPException(404, "Condomínio não encontrado.")
@@ -66,3 +68,33 @@ def update_condominium(
     db.commit()
     db.refresh(condo)
     return condo
+
+
+@router.get("/{condominium_id}/delete-preview")
+def preview_condominium_delete(condominium_id: str, db: Session = Depends(get_db), user: models.User = Depends(require_condo_admin)):
+    """O que se perde ao eliminar o condomínio (para mostrar antes de confirmar)."""
+    condo = db.query(models.Condominium).filter(models.Condominium.id == condominium_id).first()
+    if not condo:
+        raise HTTPException(404, "Condomínio não encontrado.")
+    return {"name": condo.name, **condominium_summary(db, condominium_id)}
+
+
+@router.delete("/{condominium_id}")
+def remove_condominium(
+    condominium_id: str,
+    confirm_name: str,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_condo_admin),
+):
+    """Elimina definitivamente o condomínio e TUDO o que lhe pertence. Por segurança exige
+    que se escreva o nome exato do condomínio em confirm_name."""
+    condo = db.query(models.Condominium).filter(models.Condominium.id == condominium_id).first()
+    if not condo:
+        raise HTTPException(404, "Condomínio não encontrado.")
+    if confirm_name.strip() != (condo.name or "").strip():
+        raise HTTPException(400, "O nome escrito não corresponde ao nome do condomínio. Nada foi apagado.")
+    summary = delete_condominium(db, condo)
+    doc_refs = summary.pop("_doc_refs", [])
+    db.commit()
+    delete_storage_files(doc_refs)
+    return {"ok": True, "deleted": summary}

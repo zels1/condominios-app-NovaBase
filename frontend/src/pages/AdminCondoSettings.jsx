@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useCondo } from '../lib/CondoContext'
 
@@ -12,6 +13,27 @@ const EMPTY = {
 
 export default function AdminCondoSettings() {
   const { selectedCondo, reload } = useCondo()
+  const navigate = useNavigate()
+  const [danger, setDanger] = useState(null) // resumo do que será apagado
+  const [confirmName, setConfirmName] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState(null)
+
+  async function prepareDelete() {
+    setDeleteError(null); setConfirmName('')
+    try { setDanger(await api.get(`/condominiums/${selectedCondo.id}/delete-preview`)) } catch (err) { setDeleteError(err.message) }
+  }
+
+  async function doDelete() {
+    setDeleting(true); setDeleteError(null)
+    try {
+      await api.del(`/condominiums/${selectedCondo.id}?confirm_name=${encodeURIComponent(confirmName)}`)
+      setDanger(null)
+      await reload()
+      navigate('/', { replace: true })
+    } catch (err) { setDeleteError(err.message) }
+    setDeleting(false)
+  }
   const [form, setForm] = useState(EMPTY)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -38,6 +60,7 @@ export default function AdminCondoSettings() {
       max_upload_mb: selectedCondo.max_upload_mb || 5,
     })
     setSaved(false)
+    setDanger(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCondo?.id])
 
@@ -165,6 +188,39 @@ export default function AdminCondoSettings() {
 
           <button className="btn" disabled={busy} style={{ alignSelf: 'flex-start' }}>{busy ? 'A guardar…' : 'Guardar dados'}</button>
         </form>
+      </div>
+
+      <div className="card danger-zone" style={{ maxWidth: 640 }}>
+        <h3 style={{ marginTop: 0 }}>Zona de perigo</h3>
+        {!danger ? (
+          <div className="row between" style={{ alignItems: 'center', gap: '.8rem' }}>
+            <span className="hint" style={{ margin: 0 }}>Eliminar este condomínio e todos os seus dados (frações, quotas, pagamentos, assembleias, ocorrências, documentos…).</span>
+            <button type="button" className="btn danger small" onClick={prepareDelete}>Eliminar condomínio…</button>
+          </div>
+        ) : (
+          <div className="stack">
+            <p style={{ margin: 0 }}>Vais apagar <strong>definitivamente</strong> o condomínio <strong>{danger.name}</strong>, incluindo:</p>
+            <ul style={{ margin: 0, paddingLeft: '1.2em' }}>
+              <li>{danger.fractions} frações e {danger.owners} associações de condóminos</li>
+              <li>{danger.quotas} quotas e respetivos pagamentos</li>
+              <li>{danger.assemblies} assembleias (com votos e presenças)</li>
+              <li>{danger.occurrences} ocorrências, {danger.documents} documentos e {danger.expenses} despesas</li>
+            </ul>
+            <p className="hint" style={{ margin: 0 }}>Os condóminos que não tenham frações noutros condomínios deixam de ter acesso e as fichas deles são apagadas. <strong>Não é possível desfazer.</strong></p>
+            <div className="field" style={{ margin: 0 }}>
+              <label htmlFor="confirm-name">Para confirmar, escreve o nome do condomínio: <strong>{danger.name}</strong></label>
+              <input id="confirm-name" value={confirmName} onChange={(e) => setConfirmName(e.target.value)} autoComplete="off" />
+            </div>
+            {deleteError && <div className="msg error">{deleteError}</div>}
+            <div className="row">
+              <button type="button" className="btn danger small" disabled={deleting || confirmName.trim() !== danger.name.trim()} onClick={doDelete}>
+                {deleting ? 'A eliminar…' : 'Eliminar definitivamente'}
+              </button>
+              <button type="button" className="btn secondary small" onClick={() => setDanger(null)}>Cancelar</button>
+            </div>
+          </div>
+        )}
+        {!danger && deleteError && <div className="msg error" style={{ marginTop: '.6em' }}>{deleteError}</div>}
       </div>
     </div>
   )
