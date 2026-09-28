@@ -75,6 +75,7 @@ def delete_orphan_owners(db: Session, user_ids) -> int:
             db.query(models.Proxy).filter(models.Proxy.proxy_holder_user_id == uid),
             db.query(models.Document).filter(models.Document.uploaded_by == uid),
             db.query(models.Communication).filter(models.Communication.sent_by == uid),
+            db.query(models.MaintenanceLog).filter(models.MaintenanceLog.created_by == uid),
             db.query(models.Condominium).filter(models.Condominium.admin_user_id == uid),
             db.query(models.AuditLog).filter(models.AuditLog.user_id == uid),
         ]
@@ -160,6 +161,10 @@ def delete_condominium(db: Session, condo: models.Condominium) -> dict:
     wipe(models.Budget, models.Budget.condominium_id == cid)
     wipe(models.ReminderConfig, models.ReminderConfig.condominium_id == cid)
     wipe(models.LateFeeConfig, models.LateFeeConfig.condominium_id == cid)
+    task_ids = _ids(db.query(models.MaintenanceTask.id).filter(models.MaintenanceTask.condominium_id == cid))
+    if task_ids:
+        wipe(models.MaintenanceLog, models.MaintenanceLog.task_id.in_(task_ids))
+        wipe(models.MaintenanceTask, models.MaintenanceTask.id.in_(task_ids))
     wipe(models.Expense, models.Expense.condominium_id == cid)
     if supplier_ids:
         wipe(models.Contract, models.Contract.supplier_id.in_(supplier_ids))

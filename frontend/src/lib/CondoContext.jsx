@@ -4,11 +4,21 @@ import { useAuth } from './AuthContext'
 
 const CondoContext = createContext(null)
 
+function readStored(key) {
+  if (!key) return null
+  try {
+    localStorage.removeItem('selectedCondoId') // chave antiga, partilhada entre contas
+    return localStorage.getItem(key) || null
+  } catch { return null }
+}
+
 export function CondoProvider({ children }) {
   const { user } = useAuth()
   const [me, setMe] = useState(null)
   const [condominiums, setCondominiums] = useState([])
-  const [selectedId, setSelectedId] = useState(() => localStorage.getItem('selectedCondoId') || null)
+  // o condomínio escolhido é lembrado por utilizador (não passa de uma conta para outra)
+  const storageKey = user ? `selectedCondoId:${user.id}` : null
+  const [selectedId, setSelectedId] = useState(() => readStored(storageKey))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   // Depois do primeiro carregamento, os "reload" são silenciosos: não voltam a mostrar
@@ -42,8 +52,10 @@ export function CondoProvider({ children }) {
   useEffect(() => { reload() }, [reload])
 
   useEffect(() => {
-    if (selectedId) localStorage.setItem('selectedCondoId', selectedId)
-  }, [selectedId])
+    if (selectedId && storageKey) {
+      try { localStorage.setItem(storageKey, selectedId) } catch { /* sem armazenamento: ignora */ }
+    }
+  }, [selectedId, storageKey])
 
   const selectedCondo = condominiums.find((c) => c.id === selectedId) || null
   const isAdmin = me?.role === 'admin' || me?.role === 'super_admin'

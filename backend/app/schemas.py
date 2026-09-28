@@ -524,3 +524,59 @@ class DashboardSummary(BaseModel):
     contracts_expiring_soon: List[ContractOut] = []
     this_month_collected: float
     this_month_expected: float
+    maintenance_overdue: int = 0
+    maintenance_due_soon: int = 0
+
+
+# ---------- Assembleias: presenças marcadas pelo admin ----------
+class AttendanceSet(BaseModel):
+    attendance_type: str  # present | proxy | absent
+    proxy_holder_name: Optional[str] = None
+
+
+# ---------- Manutenção (preventiva / corretiva) ----------
+class MaintenanceTaskCreate(BaseModel):
+    title: str = Field(min_length=1)
+    category: str = "outro"
+    kind: str = "preventiva"  # preventiva | corretiva
+    supplier_id: Optional[str] = None
+    frequency: str = "unica"  # unica, semanal, mensal, trimestral, semestral, anual, bienal
+    last_done: Optional[date] = None
+    next_due: Optional[date] = None
+    estimated_cost: Optional[float] = None
+    notes: Optional[str] = None
+    active: bool = True
+
+
+class MaintenanceTaskOut(ORMBase):
+    id: str
+    condominium_id: str
+    title: str
+    category: str
+    kind: str
+    supplier_id: Optional[str] = None
+    supplier_name: Optional[str] = None
+    frequency: str
+    last_done: Optional[date] = None
+    next_due: Optional[date] = None
+    estimated_cost: Optional[float] = None
+    notes: Optional[str] = None
+    active: bool
+    created_at: Optional[datetime] = None
+
+
+class MaintenanceDone(BaseModel):
+    done_at: date = Field(default_factory=date.today)
+    cost: Optional[float] = None
+    notes: Optional[str] = None
+    register_expense: bool = False
+
+
+class MaintenanceLogOut(ORMBase):
+    id: str
+    task_id: str
+    done_at: date
+    cost: Optional[float] = None
+    notes: Optional[str] = None
+    expense_id: Optional[str] = None
+    created_at: Optional[datetime] = None

@@ -109,6 +109,13 @@ tr:last-child td { border-bottom: none; }
   text-decoration: none; font-weight: 550; border: none; background: none; cursor: pointer; font-size: .93rem;
 }
 .sidebar nav a.active, .sidebar nav a:hover, .sidebar nav button.navlink:hover { background: var(--primary-soft); color: var(--primary-dark); }
+.sidebar .nav-group { display: flex; flex-direction: column; gap: .1rem; }
+.sidebar .nav-group + .nav-group { margin-top: .55rem; }
+.sidebar .nav-group-title {
+  font-size: .7rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--text-muted); padding: .35em .7em .2em;
+}
+.sidebar nav a.nav-new { margin-top: .55rem; color: var(--primary); }
 
 .main { flex: 1; min-width: 0; padding: 1.6rem clamp(1rem, 4vw, 2.4rem); }
 .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.4rem; gap: 1rem; flex-wrap: wrap; }
@@ -320,3 +327,22 @@ label.btn[aria-disabled="true"] { pointer-events: none; opacity: .6; }
 .file-picker-row label.btn { line-height: 1.2; }
 .file-picker-row label.btn.small { font-size: .85rem; }
 .row.form-row { align-items: flex-start; }
+
+/* Visão geral / listas clicáveis */
+.badge-button { cursor: pointer; font-family: inherit; }
+.badge-button:hover, .badge-button:focus-visible { filter: brightness(.96); text-decoration: underline; }
+tr.clickable-row { cursor: pointer; }
+tr.clickable-row:hover td { background: var(--primary-soft); }
+
+/* Botões de escolha (presenças, votos) */
+.choice-group { display: inline-flex; flex-wrap: wrap; gap: .3rem; }
+.choice-group .btn.small { padding: .3em .7em; }
+.choice-group .btn.secondary.selected { background: var(--primary); color: #fff; border-color: var(--primary); }
+.choice-group .btn.secondary.selected.against { background: var(--danger); border-color: var(--danger); }
+.choice-group .btn.secondary.selected.neutral { background: var(--text-muted); border-color: var(--text-muted); }
+.vote-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .4rem .8rem; padding: .45rem 0; border-top: 1px dashed var(--border); }
+.vote-row .who { min-width: 180px; }
+.vote-row .who .hint { font-size: .8rem; }
+.vote-row input { padding: .4em .6em; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: .9rem; }
+.vote-row input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+.admin-votes summary { cursor: pointer; }

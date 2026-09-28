@@ -363,6 +363,42 @@ class OccurrenceUpdate(Base):
     occurrence = relationship("Occurrence", back_populates="updates")
 
 
+class MaintenanceTask(Base):
+    """Manutenção preventiva (periódica: extintores, elevadores, limpeza…) ou corretiva
+    (reparação pontual) das partes comuns do prédio."""
+    __tablename__ = "maintenance_tasks"
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    condominium_id = Column(UUID(as_uuid=False), ForeignKey("condominiums.id"), nullable=False)
+    title = Column(String, nullable=False)
+    category = Column(String, default="outro")  # extintores, elevador, limpeza, jardinagem, ...
+    kind = Column(String, default="preventiva")  # preventiva | corretiva
+    supplier_id = Column(UUID(as_uuid=False), ForeignKey("suppliers.id"), nullable=True)
+    frequency = Column(String, default="unica")  # unica, semanal, mensal, trimestral, semestral, anual, bienal
+    last_done = Column(Date, nullable=True)
+    next_due = Column(Date, nullable=True)
+    estimated_cost = Column(Numeric(10, 2), nullable=True)
+    notes = Column(Text)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    logs = relationship("MaintenanceLog", back_populates="task", cascade="all, delete-orphan")
+
+
+class MaintenanceLog(Base):
+    """Registo de cada vez que uma manutenção foi feita."""
+    __tablename__ = "maintenance_logs"
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    task_id = Column(UUID(as_uuid=False), ForeignKey("maintenance_tasks.id"), nullable=False)
+    done_at = Column(Date, nullable=False, default=date.today)
+    cost = Column(Numeric(10, 2), nullable=True)
+    notes = Column(Text)
+    expense_id = Column(UUID(as_uuid=False), ForeignKey("expenses.id"), nullable=True)
+    created_by = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    task = relationship("MaintenanceTask", back_populates="logs")
+
+
 # ---------------------------------------------------------------------------
 # Assembleias, votação e procurações
 # ---------------------------------------------------------------------------

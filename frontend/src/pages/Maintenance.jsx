@@ -1,305 +1,459 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api'
 import { useCondo } from '../lib/CondoContext'
-import { OccurrenceStatusBadge } from '../components/StatusBadge'
-import FilePicker from '../components/FilePicker'
+import { useSort, SortTh } from '../components/SortableTable'
 
-const STATUS_FLOW = ['reported', 'acknowledged', 'in_progress', 'resolved', 'closed']
-const NEXT_LABEL = { reported: 'A caminho', acknowledged: 'A caminho', in_progress: 'Resolvido', resolved: 'Fechar' }
-const PRIORITY_LABEL = { baixa: 'Prioridade baixa', normal: 'Prioridade normal', alta: 'Prioridade alta', urgente: 'Urgente' }
-const PRIORITY_CLASS = { alta: 'warn', urgente: 'danger' }
-const PRIORITY_RANK = { urgente: 0, alta: 1, normal: 2, baixa: 3 }
-const STATUS_TEXT = { reported: 'Recebido', acknowledged: 'A caminho', in_progress: 'A caminho', resolved: 'Resolvido', closed: 'Fechada' }
-const DEFAULT_MAX_MB = 5
-const MAX_DIMENSION = 1600 // px — suficiente para ver bem a avaria, e muito mais leve
+// Manutenção do prédio (preventiva e corretiva). As avarias reportadas pelos condóminos
+// ficam em Ocorrências.
+const CATEGORIES = {
+  extintores: 'Extintores',
+  elevador: 'Elevadores',
+  limpeza: 'Limpeza',
+  jardinagem: 'Jardinagem',
+  canalizacao: 'Canalização',
+  eletricidade: 'Eletricidade',
+  gas: 'Gás',
+  desinfestacao: 'Desinfestação',
+  portao: 'Portão / garagem',
+  outro: 'Outro',
+}
+const FREQUENCIES = {
+  unica: 'Única vez',
+  semanal: 'Semanal',
+  mensal: 'Mensal',
+  trimestral: 'Trimestral',
+  semestral: 'Semestral',
+  anual: 'Anual',
+  bienal: 'De 2 em 2 anos',
+}
+const KINDS = { preventiva: 'Preventiva', corretiva: 'Corretiva' }
 
-function formatMB(bytes) {
-  return `${(bytes / 1048576).toLocaleString('pt-PT', { maximumFractionDigits: 1, minimumFractionDigits: 1 })} MB`
+const TEMPLATES = [
+  { title: 'Manutenção dos extintores', category: 'extintores', kind: 'preventiva', frequency: 'anual' },
+  { title: 'Inspeção periódica dos elevadores', category: 'elevador', kind: 'preventiva', frequency: 'bienal' },
+  { title: 'Manutenção dos elevadores', category: 'elevador', kind: 'preventiva', frequency: 'mensal' },
+  { title: 'Limpeza das partes comuns', category: 'limpeza', kind: 'preventiva', frequency: 'semanal' },
+  { title: 'Desinfestação e desratização', category: 'desinfestacao', kind: 'preventiva', frequency: 'semestral' },
+  { title: 'Manutenção do portão da garagem', category: 'portao', kind: 'preventiva', frequency: 'semestral' },
+]
+
+const EMPTY = { title: '', category: 'extintores', kind: 'preventiva', frequency: 'anual', supplier_id: '', last_done: '', next_due: '', estimated_cost: '', notes: '', active: true }
+
+function money(v) { return v == null ? '—' : new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(v) }
+function fmtDate(d) { return d ? new Date(`${d}T00:00:00`).toLocaleDateString('pt-PT') : '—' }
+function todayISO() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// Reduz a foto no próprio telemóvel/computador antes de enviar (JPEG, lado maior ≤ 1600 px).
-// Se o browser não conseguir ler o formato (ex: HEIC no Chrome), envia o original.
-async function shrinkImage(file) {
-  try {
-    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
-    const scale = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height))
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.round(bitmap.width * scale)
-    canvas.height = Math.round(bitmap.height * scale)
-    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-    bitmap.close?.()
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82))
-    if (blob && blob.size < file.size) return blob
-  } catch {
-    // formato não suportado pelo browser — segue o original
-  }
-  return file
+function daysUntil(d) {
+  const t = new Date(); t.setHours(0, 0, 0, 0)
+  return Math.round((new Date(`${d}T00:00:00`) - t) / 86400000)
+}
+
+function relative(d) {
+  const n = daysUntil(d)
+  if (n === 0) return 'hoje'
+  if (n < 0) return `há ${-n} dia${n === -1 ? '' : 's'}`
+  return `daqui a ${n} dia${n === 1 ? '' : 's'}`
+}
+
+function taskState(t) {
+  if (!t.active) return { key: 'inactive', text: 'Suspensa', cls: '', rank: 5 }
+  if (!t.next_due) return t.last_done ? { key: 'done', text: 'Concluída', cls: 'ok', rank: 4 } : { key: 'nodate', text: 'Sem data', cls: '', rank: 3 }
+  const n = daysUntil(t.next_due)
+  if (n < 0) return { key: 'overdue', text: 'Em atraso', cls: 'danger', rank: 0 }
+  if (n <= 30) return { key: 'soon', text: n === 0 ? 'Hoje' : 'Em breve', cls: 'warn', rank: 1 }
+  return { key: 'planned', text: 'Agendada', cls: 'ok', rank: 2 }
 }
 
 export default function Maintenance() {
   const { selectedCondo, isAdmin } = useCondo()
-  const [occurrences, setOccurrences] = useState([])
-  const [fractions, setFractions] = useState([])
-  const [filter, setFilter] = useState('all') // all | open | mine
-  const [sortBy, setSortBy] = useState('priority') // priority | recent
-  const [replies, setReplies] = useState({}) // occurrence id -> texto da resposta
-  const [replyBusy, setReplyBusy] = useState(null)
-  const [form, setForm] = useState({ title: '', description: '', fraction_id: '', priority: 'normal' })
-  const [photo, setPhoto] = useState(null) // { blob, preview, originalSize }
-  const [photoBusy, setPhotoBusy] = useState(false)
+  const [tasks, setTasks] = useState([])
+  const [suppliers, setSuppliers] = useState([])
+  const [loaded, setLoaded] = useState(false)
+  const [filter, setFilter] = useState('all')
+  const [form, setForm] = useState(null) // null = fechado; {…, id?} = a criar/editar
+  const [doneFor, setDoneFor] = useState(null)
+  const [historyFor, setHistoryFor] = useState(null)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
-  const [busy, setBusy] = useState(false)
-  const fileInputRef = useRef(null)
-
-  const maxMb = selectedCondo?.max_upload_mb || DEFAULT_MAX_MB
-  const maxBytes = maxMb * 1048576
+  const base = selectedCondo ? `/condominiums/${selectedCondo.id}/maintenance` : null
 
   async function load() {
-    const occs = await api.get(`/condominiums/${selectedCondo.id}/occurrences`)
-    setOccurrences(occs)
-    setFractions(await api.get(`/condominiums/${selectedCondo.id}/occurrences/fractions`))
+    const [list, sups] = await Promise.all([
+      api.get(base),
+      isAdmin ? api.get(`/condominiums/${selectedCondo.id}/suppliers`).catch(() => []) : Promise.resolve([]),
+    ])
+    setTasks(list)
+    setSuppliers(sups)
+    setLoaded(true)
   }
-  useEffect(() => { if (selectedCondo) load().catch((e) => setError(e.message)) }, [selectedCondo])
+  useEffect(() => {
+    if (!selectedCondo) return
+    setLoaded(false); setForm(null); setDoneFor(null); setHistoryFor(null); setError(null); setNotice(null)
+    load().catch((e) => { setError(e.message); setLoaded(true) })
+  }, [selectedCondo?.id])
 
-  function clearPhoto() {
-    if (photo?.preview) URL.revokeObjectURL(photo.preview)
-    setPhoto(null)
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }
+  const visible = tasks.filter((t) => filter === 'all' || t.kind === filter)
+  const columns = useMemo(() => ({
+    state: (t) => taskState(t).rank * 100000 + (t.next_due ? daysUntil(t.next_due) : 0),
+    title: (t) => t.title,
+    category: (t) => CATEGORIES[t.category] || t.category,
+    frequency: (t) => Object.keys(FREQUENCIES).indexOf(t.frequency),
+    last: (t) => t.last_done,
+    next: (t) => t.next_due,
+    supplier: (t) => t.supplier_name,
+    cost: (t) => t.estimated_cost,
+  }), [])
+  const { sorted, sort, toggle } = useSort(visible, columns, 'state')
 
-  async function handlePhotoPick(file) {
-    setError(null)
-    if (!file) { clearPhoto(); return }
-    if (!file.type.startsWith('image/')) {
-      setError('Escolhe um ficheiro de imagem (foto).')
-      clearPhoto()
-      return
-    }
-    setPhotoBusy(true)
-    const blob = await shrinkImage(file)
-    setPhotoBusy(false)
-    if (blob.size > maxBytes) {
-      setError(`A foto tem ${formatMB(blob.size)} e o limite neste condomínio é ${maxMb} MB. Escolhe outra foto ou tira-a com menor resolução.`)
-      clearPhoto()
-      return
-    }
-    if (photo?.preview) URL.revokeObjectURL(photo.preview)
-    setPhoto({ blob, preview: URL.createObjectURL(blob), originalSize: file.size })
-  }
+  const overdue = tasks.filter((t) => taskState(t).key === 'overdue').length
+  const soon = tasks.filter((t) => taskState(t).key === 'soon').length
+  const preventive = tasks.filter((t) => t.kind === 'preventiva' && t.active).length
+  const corrective = tasks.filter((t) => t.kind === 'corretiva' && taskState(t).key !== 'done' && t.active).length
 
-  async function handleCreate(e) {
+  async function save(e) {
     e.preventDefault()
-    setError(null)
-    setNotice(null)
-    if (!form.title.trim() && !photo) {
-      setError('Descreve o que se passa ou junta uma foto.')
-      return
+    setError(null); setNotice(null)
+    const body = {
+      title: form.title.trim(),
+      category: form.category,
+      kind: form.kind,
+      frequency: form.frequency,
+      supplier_id: form.supplier_id || null,
+      last_done: form.last_done || null,
+      next_due: form.next_due || null,
+      estimated_cost: form.estimated_cost === '' ? null : parseFloat(String(form.estimated_cost).replace(',', '.')),
+      notes: form.notes.trim() || null,
+      active: form.active,
     }
-    setBusy(true)
     try {
-      let photo_url
-      if (photo) {
-        const res = await api.upload(`/condominiums/${selectedCondo.id}/occurrences/photo`, photo.blob, photo.blob.type || 'image/jpeg')
-        photo_url = res.url
-      }
-      const title = form.title.trim() || `Avaria reportada (${new Date().toLocaleString('pt-PT')})`
-      await api.post(`/condominiums/${selectedCondo.id}/occurrences`, {
-        title, description: form.description || undefined, photo_url,
-        fraction_id: form.fraction_id || undefined, priority: form.priority,
-      })
-      setForm({ title: '', description: '', fraction_id: '', priority: 'normal' })
-      clearPhoto()
-      setNotice('Ocorrência reportada. A administração foi notificada.')
-      load()
-    } catch (err) { setError(err.message) }
-    setBusy(false)
-  }
-
-  // Resposta do administrador (com ou sem mudança de estado)
-  async function respond(occ, advanceStatus) {
-    const note = (replies[occ.id] || '').trim()
-    let status = occ.status
-    if (advanceStatus) {
-      const idx = STATUS_FLOW.indexOf(occ.status)
-      status = STATUS_FLOW[Math.min(idx + 1, STATUS_FLOW.length - 1)]
-    }
-    if (!advanceStatus && !note) return
-    setReplyBusy(occ.id)
-    setError(null)
-    try {
-      await api.post(`/condominiums/${selectedCondo.id}/occurrences/${occ.id}/updates`, { status, note: note || undefined })
-      setReplies((r) => ({ ...r, [occ.id]: '' }))
+      if (form.id) await api.put(`${base}/${form.id}`, body)
+      else await api.post(base, body)
+      setNotice(form.id ? `"${body.title}" atualizada.` : `"${body.title}" adicionada ao plano de manutenção.`)
+      setForm(null)
       await load()
     } catch (err) { setError(err.message) }
-    setReplyBusy(null)
+  }
+
+  async function remove(t) {
+    if (!window.confirm(`Apagar "${t.title}" e todo o seu histórico? As despesas já lançadas mantêm-se.`)) return
+    setError(null); setNotice(null)
+    try {
+      await api.del(`${base}/${t.id}`)
+      setNotice(`"${t.title}" apagada.`)
+      if (historyFor === t.id) setHistoryFor(null)
+      await load()
+    } catch (err) { setError(err.message) }
+  }
+
+  function edit(t) {
+    setDoneFor(null); setNotice(null); setError(null)
+    setForm({
+      id: t.id, title: t.title, category: t.category, kind: t.kind, frequency: t.frequency,
+      supplier_id: t.supplier_id || '', last_done: t.last_done || '', next_due: t.next_due || '',
+      estimated_cost: t.estimated_cost ?? '', notes: t.notes || '', active: t.active,
+    })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   if (!selectedCondo) return null
 
-  const isOpen = (o) => o.status !== 'resolved' && o.status !== 'closed'
-  const counts = {
-    all: occurrences.length,
-    open: occurrences.filter(isOpen).length,
-    mine: occurrences.filter((o) => o.reported_by_me).length,
-  }
-  const byDate = (a, b) => b.created_at.localeCompare(a.created_at)
-  const visible = occurrences
-    .filter((o) => (filter === 'open' ? isOpen(o) : filter === 'mine' ? o.reported_by_me : true))
-    .sort((a, b) => sortBy === 'recent'
-      ? byDate(a, b)
-      // por prioridade: em aberto primeiro, depois urgente → baixa, depois as mais recentes
-      : (isOpen(b) - isOpen(a)) || ((PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9)) || byDate(a, b))
-
   return (
     <div className="stack">
-      <h1>Manutenção e Ocorrências</h1>
-
-      <div className="card">
-        <h3>Reportar uma avaria — tira uma foto e envia</h3>
-        {error && <div className="msg error" style={{ marginBottom: '1em' }}>{error}</div>}
-        {notice && <div className="msg success" style={{ marginBottom: '1em' }}>{notice}</div>}
-        <form onSubmit={handleCreate} className="stack">
-          <div className="field">
-            <label htmlFor="occ-photo">Foto (opcional, mas ajuda muito o administrador)</label>
-            <FilePicker
-              id="occ-photo" accept="image/*" label="Escolher foto" emptyText="Nenhuma foto escolhida"
-              disabled={photoBusy || busy} onFile={handlePhotoPick}
-              file={photo ? { name: photo.originalSize > photo.blob.size ? 'Foto (reduzida para enviar)' : 'Foto', size: photo.blob.size } : null}
-              preview={photo?.preview}
-              hint={photoBusy ? 'A preparar a foto…' : <>Tamanho máximo: <strong>{maxMb} MB</strong>. As fotos grandes são reduzidas automaticamente antes de enviar.{photo && photo.originalSize > photo.blob.size ? ` (${formatMB(photo.originalSize)} → ${formatMB(photo.blob.size)})` : ''}</>}
-            />
-          </div>
-          <div className="field">
-            <label>O que se passa? (opcional se enviares foto)</label>
-            <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Ex: Torneira a pingar nas partes comuns" />
-          </div>
-          <div className="field">
-            <label>Mais detalhes (opcional)</label>
-            <textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-          </div>
-          <div className="row">
-            {(isAdmin || fractions.length > 0) && (
-              <div className="field" style={{ flex: 1, minWidth: 180 }}>
-                <label htmlFor="occ-where">Onde é?</label>
-                <select id="occ-where" value={form.fraction_id} onChange={(e) => setForm({ ...form, fraction_id: e.target.value })}>
-                  <option value="">Zona comum (escadas, garagem, elevador…)</option>
-                  {fractions.map((f) => <option key={f.id} value={f.id}>{isAdmin ? `Fração ${f.identifier}` : `A minha fração — ${f.identifier}`}</option>)}
-                </select>
-              </div>
-            )}
-            <div className="field" style={{ width: 160 }}>
-              <label>Prioridade</label>
-              <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
-                <option value="baixa">Baixa</option>
-                <option value="normal">Normal</option>
-                <option value="alta">Alta</option>
-                <option value="urgente">Urgente</option>
-              </select>
-            </div>
-          </div>
-          <button className="btn" style={{ alignSelf: 'flex-start' }} disabled={busy || photoBusy}>{busy ? 'A enviar…' : 'Reportar'}</button>
-        </form>
+      <div className="row between" style={{ alignItems: 'center', gap: '.6rem' }}>
+        <h1 style={{ margin: 0 }}>Manutenção</h1>
+        {isAdmin && !form && (
+          <button className="btn" onClick={() => { setForm({ ...EMPTY }); setDoneFor(null); setNotice(null); setError(null) }}>+ Nova manutenção</button>
+        )}
       </div>
+      <p className="hint" style={{ marginTop: 0 }}>
+        Manutenções <strong>preventivas</strong> (periódicas: extintores, elevadores, limpeza…) e <strong>corretivas</strong> (reparações) das partes comuns.
+        {' '}As avarias reportadas pelos condóminos estão em <em>Ocorrências</em>.
+      </p>
+      {notice && <div className="msg success">{notice}</div>}
+      {error && <div className="msg error">{error}</div>}
 
-      <div className="row between" style={{ alignItems: 'center', flexWrap: 'wrap', gap: '.6rem' }}>
-        <h2 style={{ margin: 0 }}>Ocorrências do condomínio</h2>
-        <div className="filter-tabs" role="tablist" aria-label="Filtrar ocorrências">
-          {[['all', 'Todas'], ['open', 'Em aberto'], ['mine', 'Por mim']].map(([key, label]) => (
-            <button key={key} type="button" role="tab" aria-selected={filter === key}
-              className={`filter-tab${filter === key ? ' active' : ''}`} onClick={() => setFilter(key)}>
-              {label} <span className="filter-count">{counts[key]}</span>
-            </button>
-          ))}
+      <div className="grid">
+        <div className="card stat">
+          <span className="label">Em atraso</span>
+          <span className="value" style={{ color: overdue ? 'var(--danger)' : 'inherit' }}>{overdue}</span>
+        </div>
+        <div className="card stat">
+          <span className="label">Nos próximos 30 dias</span>
+          <span className="value">{soon}</span>
+        </div>
+        <div className="card stat">
+          <span className="label">Preventivas ativas</span>
+          <span className="value">{preventive}</span>
+        </div>
+        <div className="card stat">
+          <span className="label">Corretivas por concluir</span>
+          <span className="value">{corrective}</span>
         </div>
       </div>
-      <div className="row" style={{ alignItems: 'center', gap: '.5rem', marginTop: '-.4rem' }}>
-        <label htmlFor="occ-sort" className="hint" style={{ margin: 0 }}>Ordenar por</label>
-        <select id="occ-sort" value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="compact-select">
-          <option value="priority">Prioridade (urgentes primeiro)</option>
-          <option value="recent">Mais recentes</option>
-        </select>
-      </div>
 
-      <div className="stack">
-        {visible.map((o) => (
-          <div key={o.id} className="card">
-            <div className="row between" style={{ alignItems: 'flex-start', gap: '.8rem' }}>
-              <div className="row" style={{ alignItems: 'flex-start', gap: '.8rem', flexWrap: 'nowrap', minWidth: 0 }}>
-                {o.photo_url && (
-                  <a href={o.photo_url} target="_blank" rel="noreferrer" title="Ver foto em tamanho real" style={{ flexShrink: 0 }}>
-                    <img src={o.photo_url} alt={`Foto: ${o.title}`} style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, display: 'block' }} />
-                  </a>
-                )}
-                <div style={{ minWidth: 0 }}>
-                  <h3 style={{ margin: 0 }}>{o.title}</h3>
-                  <div className="row" style={{ gap: '.35rem', flexWrap: 'wrap', marginTop: '.3em' }}>
-                    <span className="badge">{o.fraction_identifier ? `Fração ${o.fraction_identifier}` : 'Zona comum'}</span>
-                    <span className={`badge ${PRIORITY_CLASS[o.priority] || ''}`}>{PRIORITY_LABEL[o.priority] || o.priority}</span>
-                  </div>
-                  {o.description && <p style={{ marginTop: '.4em' }}>{o.description}</p>}
-                  <p className="hint">
-                    Reportada por <strong>{o.reported_by_me ? 'mim' : (o.reporter_name || 'condómino')}</strong>
-                    {' '}em {new Date(o.created_at).toLocaleDateString('pt-PT')}
-                  </p>
-                </div>
-              </div>
-              <OccurrenceStatusBadge status={o.status} />
-            </div>
+      {isAdmin && form && (
+        <TaskForm form={form} setForm={setForm} suppliers={suppliers} onSubmit={save} onCancel={() => setForm(null)} />
+      )}
 
-            <div className="row" style={{ gap: '.5rem', flexWrap: 'wrap', marginTop: '.6rem' }}>
-              {['Recebido', 'A caminho', 'Resolvido'].map((label, i) => {
-                const doneIdx = o.status === 'reported' ? 0 : (o.status === 'acknowledged' || o.status === 'in_progress') ? 1 : 2
-                const done = i <= doneIdx
-                return (
-                  <span key={label} className={`badge ${done ? 'ok' : ''}`} style={{ opacity: done ? 1 : 0.5 }}>
-                    {i > 0 && '→ '}{label}
-                  </span>
-                )
-              })}
-            </div>
+      {isAdmin && doneFor && (
+        <DoneForm
+          key={doneFor}
+          task={tasks.find((t) => t.id === doneFor)}
+          base={base}
+          onCancel={() => setDoneFor(null)}
+          onDone={async (msg) => { setDoneFor(null); setNotice(msg); await load() }}
+        />
+      )}
 
-            {(() => {
-              const answers = (o.updates || []).filter((u) => u.note).sort((a, b) => a.created_at.localeCompare(b.created_at))
-              if (!answers.length) return null
-              return (
-                <div className="occ-replies">
-                  <span className="occ-replies-title">Respostas da administração</span>
-                  {answers.map((u) => (
-                    <div key={u.id} className="occ-reply">
-                      <p style={{ margin: 0, whiteSpace: 'pre-line' }}>{u.note}</p>
-                      <span className="hint" style={{ margin: 0 }}>
-                        {new Date(u.created_at).toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' })} · estado: {STATUS_TEXT[u.status] || u.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )
-            })()}
-
-            {isAdmin && o.status !== 'closed' && (
-              <div className="occ-reply-box">
-                <label htmlFor={`reply-${o.id}`} className="hint" style={{ margin: 0, fontWeight: 600 }}>Responder ao condómino</label>
-                <textarea id={`reply-${o.id}`} rows={2} value={replies[o.id] || ''} placeholder="Ex: O técnico vem na quinta-feira de manhã."
-                  onChange={(e) => setReplies({ ...replies, [o.id]: e.target.value })} />
-                <div className="row" style={{ gap: '.4rem', flexWrap: 'wrap' }}>
-                  <button type="button" className="btn small" disabled={replyBusy === o.id || !(replies[o.id] || '').trim()} onClick={() => respond(o, false)}>
-                    Enviar resposta
-                  </button>
-                  <button type="button" className="btn secondary small" disabled={replyBusy === o.id} onClick={() => respond(o, true)}>
-                    {(replies[o.id] || '').trim() ? `Enviar e marcar "${NEXT_LABEL[o.status]}"` : `Marcar como "${NEXT_LABEL[o.status]}"`}
-                  </button>
-                </div>
-              </div>
-            )}
+      <div className="card">
+        <div className="row between" style={{ alignItems: 'center', marginBottom: '.6rem' }}>
+          <h3 style={{ margin: 0 }}>Plano de manutenção</h3>
+          <div className="choice-group" role="group" aria-label="Filtrar por tipo">
+            {[['all', 'Todas'], ['preventiva', 'Preventivas'], ['corretiva', 'Corretivas']].map(([k, l]) => (
+              <button key={k} type="button" className={`btn secondary small${filter === k ? ' selected' : ''}`} aria-pressed={filter === k} onClick={() => setFilter(k)}>{l}</button>
+            ))}
           </div>
-        ))}
-        {visible.length === 0 && (
+        </div>
+        {!loaded ? <div className="empty">A carregar…</div> : visible.length === 0 ? (
           <div className="empty">
-            {filter === 'mine' ? 'Ainda não reportaste nenhuma ocorrência.' : filter === 'open' ? 'Não há ocorrências em aberto. 👍' : 'Sem ocorrências reportadas.'}
+            {tasks.length === 0
+              ? (isAdmin ? 'Ainda não há manutenções registadas. Usa "+ Nova manutenção" — há modelos prontos para extintores, elevadores e limpeza.' : 'O administrador ainda não registou manutenções.')
+              : 'Nenhuma manutenção deste tipo.'}
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <SortTh label="Estado" sortKey="state" sort={sort} onSort={toggle} />
+                  <SortTh label="Manutenção" sortKey="title" sort={sort} onSort={toggle} />
+                  <SortTh label="Periodicidade" sortKey="frequency" sort={sort} onSort={toggle} />
+                  <SortTh label="Última" sortKey="last" sort={sort} onSort={toggle} />
+                  <SortTh label="Próxima" sortKey="next" sort={sort} onSort={toggle} />
+                  <SortTh label="Fornecedor" sortKey="supplier" sort={sort} onSort={toggle} />
+                  {isAdmin && <SortTh label="Custo previsto" sortKey="cost" sort={sort} onSort={toggle} />}
+                  {isAdmin && <th />}
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((t) => {
+                  const st = taskState(t)
+                  return (
+                    <Fragment key={t.id}>
+                      <tr>
+                        <td><span className={`badge ${st.cls}`} style={{ whiteSpace: 'nowrap' }}>{st.text}</span></td>
+                        <td style={{ minWidth: 180 }}>
+                          <strong>{t.title}</strong>
+                          <div className="hint" style={{ fontSize: '.8rem' }}>{KINDS[t.kind] || t.kind} · {CATEGORIES[t.category] || t.category}{t.notes ? ` · ${t.notes}` : ''}</div>
+                          {isAdmin && (
+                            <div className="row" style={{ gap: '.8rem', marginTop: '.25rem' }}>
+                              <button className="link-button small" onClick={() => setHistoryFor(historyFor === t.id ? null : t.id)} aria-expanded={historyFor === t.id}>Histórico</button>
+                              <button className="link-button small" onClick={() => edit(t)}>Editar</button>
+                              <button className="link-button small" onClick={() => remove(t)} aria-label={`Apagar ${t.title}`}>Apagar</button>
+                            </div>
+                          )}
+                          {!isAdmin && (
+                            <button className="link-button small" style={{ marginTop: '.25rem' }} onClick={() => setHistoryFor(historyFor === t.id ? null : t.id)} aria-expanded={historyFor === t.id}>Histórico</button>
+                          )}
+                        </td>
+                        <td>{FREQUENCIES[t.frequency] || t.frequency}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(t.last_done)}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {fmtDate(t.next_due)}
+                          {t.next_due && t.active && <div className="hint" style={{ fontSize: '.78rem', color: st.key === 'overdue' ? 'var(--danger)' : undefined }}>{relative(t.next_due)}</div>}
+                        </td>
+                        <td>{t.supplier_name || '—'}</td>
+                        {isAdmin && <td>{money(t.estimated_cost)}</td>}
+                        {isAdmin && (
+                          <td>
+                            {t.active && st.key !== 'done' && (
+                              <button className="btn small" style={{ whiteSpace: 'nowrap' }} onClick={() => { setForm(null); setDoneFor(t.id); setNotice(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>Marcar como feita</button>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                      {historyFor === t.id && (
+                        <tr>
+                          <td colSpan={isAdmin ? 8 : 6} style={{ background: 'var(--bg)' }}>
+                            <History base={base} task={t} isAdmin={isAdmin} onChanged={load} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function TaskForm({ form, setForm, suppliers, onSubmit, onCancel }) {
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
+  const periodic = form.frequency !== 'unica'
+  return (
+    <div className="card">
+      <h3>{form.id ? 'Editar manutenção' : 'Nova manutenção'}</h3>
+      {!form.id && (
+        <div className="field">
+          <label>Modelos rápidos</label>
+          <div className="row" style={{ gap: '.35rem' }}>
+            {TEMPLATES.map((tpl) => (
+              <button key={tpl.title} type="button" className="btn secondary small" onClick={() => setForm({ ...form, ...tpl })}>{tpl.title}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      <form onSubmit={onSubmit} className="stack">
+        <div className="field">
+          <label htmlFor="mt-title">Descrição *</label>
+          <input id="mt-title" value={form.title} onChange={set('title')} required placeholder="Ex: Manutenção dos extintores" />
+        </div>
+        <div className="row form-row">
+          <div className="field" style={{ flex: 1, minWidth: 160 }}>
+            <label htmlFor="mt-kind">Tipo</label>
+            <select id="mt-kind" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value, frequency: e.target.value === 'corretiva' ? 'unica' : form.frequency })}>
+              <option value="preventiva">Preventiva (periódica)</option>
+              <option value="corretiva">Corretiva (reparação)</option>
+            </select>
+          </div>
+          <div className="field" style={{ flex: 1, minWidth: 160 }}>
+            <label htmlFor="mt-cat">Categoria</label>
+            <select id="mt-cat" value={form.category} onChange={set('category')}>
+              {Object.entries(CATEGORIES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          </div>
+          <div className="field" style={{ flex: 1, minWidth: 160 }}>
+            <label htmlFor="mt-freq">Periodicidade</label>
+            <select id="mt-freq" value={form.frequency} onChange={set('frequency')}>
+              {Object.entries(FREQUENCIES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="row form-row">
+          <div className="field" style={{ flex: 1, minWidth: 160 }}>
+            <label htmlFor="mt-last">Última vez feita</label>
+            <input id="mt-last" type="date" value={form.last_done} onChange={set('last_done')} max={todayISO()} />
+            {periodic && !form.id && <span className="hint">Se deixares a próxima data vazia, é calculada a partir desta.</span>}
+          </div>
+          <div className="field" style={{ flex: 1, minWidth: 160 }}>
+            <label htmlFor="mt-next">{periodic ? 'Próxima data' : 'Data prevista'}</label>
+            <input id="mt-next" type="date" value={form.next_due} onChange={set('next_due')} />
+          </div>
+          <div className="field" style={{ flex: 1, minWidth: 160 }}>
+            <label htmlFor="mt-cost">Custo previsto (€)</label>
+            <input id="mt-cost" type="number" min="0" step="0.01" value={form.estimated_cost} onChange={set('estimated_cost')} />
+          </div>
+        </div>
+        <div className="row form-row">
+          <div className="field" style={{ flex: 1, minWidth: 200 }}>
+            <label htmlFor="mt-sup">Fornecedor</label>
+            <select id="mt-sup" value={form.supplier_id} onChange={set('supplier_id')}>
+              <option value="">— Sem fornecedor —</option>
+              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            {suppliers.length === 0 && <span className="hint">Podes registar fornecedores em Fornecedores e despesas.</span>}
+          </div>
+          <div className="field" style={{ flex: 2, minWidth: 200 }}>
+            <label htmlFor="mt-notes">Notas</label>
+            <input id="mt-notes" value={form.notes} onChange={set('notes')} placeholder="Ex: 6 extintores (piso 0 a 5)" />
+          </div>
+        </div>
+        {form.id && (
+          <label className="remember" style={{ margin: 0 }}>
+            <input type="checkbox" checked={form.active} onChange={set('active')} /> Ativa (desmarca para suspender sem apagar)
+          </label>
+        )}
+        <div className="row">
+          <button className="btn small">{form.id ? 'Guardar alterações' : 'Adicionar'}</button>
+          <button type="button" className="btn secondary small" onClick={onCancel}>Cancelar</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function DoneForm({ task, base, onCancel, onDone }) {
+  const [f, setF] = useState({ done_at: todayISO(), cost: task?.estimated_cost ?? '', notes: '', register_expense: false })
+  const [err, setErr] = useState(null)
+  const [busy, setBusy] = useState(false)
+  if (!task) return null
+  async function submit(e) {
+    e.preventDefault()
+    setErr(null); setBusy(true)
+    try {
+      const cost = f.cost === '' ? null : parseFloat(String(f.cost).replace(',', '.'))
+      const res = await api.post(`${base}/${task.id}/done`, { done_at: f.done_at, cost, notes: f.notes.trim() || null, register_expense: f.register_expense })
+      await onDone(`"${task.title}" registada como feita a ${fmtDate(f.done_at)}.`
+        + (res.next_due ? ` Próxima: ${fmtDate(res.next_due)}.` : '')
+        + (f.register_expense ? ' Despesa lançada em Fornecedores e despesas.' : ''))
+    } catch (e2) { setErr(e2.message); setBusy(false) }
+  }
+  return (
+    <div className="card">
+      <h3>Marcar como feita — {task.title}</h3>
+      <form onSubmit={submit} className="stack">
+        <div className="row form-row">
+          <div className="field" style={{ flex: 1, minWidth: 150 }}>
+            <label htmlFor="dn-date">Data *</label>
+            <input id="dn-date" type="date" value={f.done_at} max={todayISO()} onChange={(e) => setF({ ...f, done_at: e.target.value })} required />
+          </div>
+          <div className="field" style={{ flex: 1, minWidth: 150 }}>
+            <label htmlFor="dn-cost">Custo (€)</label>
+            <input id="dn-cost" type="number" min="0" step="0.01" value={f.cost} onChange={(e) => setF({ ...f, cost: e.target.value })} />
+          </div>
+          <div className="field" style={{ flex: 2, minWidth: 200 }}>
+            <label htmlFor="dn-notes">Notas</label>
+            <input id="dn-notes" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Ex: substituídos 2 extintores" />
+          </div>
+        </div>
+        <label className="remember" style={{ margin: 0 }}>
+          <input type="checkbox" checked={f.register_expense} onChange={(e) => setF({ ...f, register_expense: e.target.checked })} />
+          Lançar este custo como despesa do condomínio
+        </label>
+        {task.frequency !== 'unica' && <p className="hint" style={{ margin: 0 }}>A próxima data é calculada automaticamente ({FREQUENCIES[task.frequency].toLowerCase()}).</p>}
+        {err && <div className="msg error">{err}</div>}
+        <div className="row">
+          <button className="btn small" disabled={busy}>{busy ? 'A guardar…' : 'Registar'}</button>
+          <button type="button" className="btn secondary small" onClick={onCancel}>Cancelar</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function History({ base, task, isAdmin, onChanged }) {
+  const [logs, setLogs] = useState(null)
+  const [err, setErr] = useState(null)
+  async function load() {
+    try { setLogs(await api.get(`${base}/${task.id}/logs`)) } catch (e) { setErr(e.message) }
+  }
+  useEffect(() => { load() }, [task.id, task.last_done])
+  async function removeLog(l) {
+    if (!window.confirm(`Apagar o registo de ${fmtDate(l.done_at)}?${l.expense_id ? ' (a despesa lançada mantém-se)' : ''}`)) return
+    try { await api.del(`${base}/${task.id}/logs/${l.id}`); await onChanged(); await load() } catch (e) { setErr(e.message) }
+  }
+  if (err) return <div className="msg error">{err}</div>
+  if (!logs) return <span className="hint">A carregar histórico…</span>
+  if (logs.length === 0) return <span className="hint">Ainda sem registos de execução.</span>
+  return (
+    <div className="stack" style={{ gap: '.3rem' }}>
+      <strong style={{ fontSize: '.85rem' }}>Histórico</strong>
+      {logs.map((l) => (
+        <div key={l.id} className="row between" style={{ fontSize: '.9rem' }}>
+          <span>
+            {fmtDate(l.done_at)}{l.cost != null ? ` · ${money(l.cost)}` : ''}{l.notes ? ` · ${l.notes}` : ''}
+            {l.expense_id && <span className="badge" style={{ marginLeft: '.4rem' }}>Despesa lançada</span>}
+          </span>
+          {isAdmin && <button className="btn secondary small" onClick={() => removeLog(l)}>Apagar registo</button>}
+        </div>
+      ))}
     </div>
   )
 }

@@ -7,6 +7,7 @@ from typing import List
 from .. import models, schemas
 from ..database import get_db
 from ..auth import get_current_user, require_admin, require_condo_admin, require_condo_member
+from ..services.fraction_ids import normalize_identifier
 from ..services.purge import condominium_summary, delete_condominium, delete_storage_files
 
 router = APIRouter(prefix="/condominiums", tags=["Condomínios"])
@@ -25,13 +26,18 @@ def create_condominium(
     db.add(condo)
     db.flush()
 
-    seen = set()
+    seen = {}
     for i, f in enumerate(payload.fractions, start=1):
         ident = f.identifier.strip()
-        if ident.lower() in seen:
+        key = normalize_identifier(ident)
+        if not key:
             db.rollback()
-            raise HTTPException(400, f"A fração \"{ident}\" aparece repetida.")
-        seen.add(ident.lower())
+            raise HTTPException(400, f"A fração nº {i} não tem identificador.")
+        if key in seen:
+            db.rollback()
+            same = f"\"{seen[key]}\" e \"{ident}\" são a mesma fração" if seen[key] != ident else f"A fração \"{ident}\" aparece repetida"
+            raise HTTPException(400, f"{same}. Corrige os identificadores.")
+        seen[key] = ident
         fraction = models.Fraction(condominium_id=condo.id, identifier=ident, permilagem=f.permilagem,
                                    fraction_type=f.fraction_type or "habitação")
         db.add(fraction)

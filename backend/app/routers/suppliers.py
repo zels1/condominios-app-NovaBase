@@ -51,6 +51,11 @@ def delete_supplier(condominium_id: str, supplier_id: str, db: Session = Depends
     supplier = db.query(models.Supplier).filter(models.Supplier.id == supplier_id, models.Supplier.condominium_id == condominium_id).first()
     if not supplier:
         raise HTTPException(404, "Fornecedor não encontrado.")
+    # despesas e manutenções deste fornecedor ficam guardadas, só sem fornecedor associado
+    db.query(models.Expense).filter(models.Expense.supplier_id == supplier.id).update(
+        {models.Expense.supplier_id: None}, synchronize_session=False)
+    db.query(models.MaintenanceTask).filter(models.MaintenanceTask.supplier_id == supplier.id).update(
+        {models.MaintenanceTask.supplier_id: None}, synchronize_session=False)
     db.delete(supplier)
     db.commit()
     return {"ok": True}
@@ -145,6 +150,8 @@ def delete_expense(condominium_id: str, expense_id: str, db: Session = Depends(g
     expense = db.query(models.Expense).filter(models.Expense.id == expense_id, models.Expense.condominium_id == condominium_id).first()
     if not expense:
         raise HTTPException(404, "Despesa não encontrada.")
+    db.query(models.MaintenanceLog).filter(models.MaintenanceLog.expense_id == expense.id).update(
+        {models.MaintenanceLog.expense_id: None}, synchronize_session=False)
     db.delete(expense)
     db.commit()
     return {"ok": True}

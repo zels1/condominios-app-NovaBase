@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useCondo } from '../lib/CondoContext'
 import DomvusLogo from '../components/DomvusLogo'
+import { findDuplicates } from '../lib/fractionIds'
 
 const TYPES = [['habitação', 'Habitação'], ['comércio', 'Comércio'], ['garagem', 'Garagem'], ['arrumos', 'Arrumos']]
 const NAMING = [
@@ -71,9 +72,16 @@ export default function AdminSetup() {
   const total = rows.reduce((t, r) => t + (parseFloat(String(r.permilagem).replace(',', '.')) || 0), 0)
   const balanced = rows.length === 0 || Math.abs(total - 1000) < 0.0005
 
+  const duplicates = findDuplicates(rows.map((r) => r.identifier))
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError(null)
+    const dupIdx = Object.keys(duplicates)[0]
+    if (dupIdx !== undefined) {
+      setError(`"${rows[dupIdx].identifier}" é a mesma fração que "${duplicates[dupIdx]}". Corrige os identificadores repetidos.`)
+      return
+    }
     const missingEmail = rows.find((r) => r.owner_name.trim() && !r.owner_email.trim())
     if (missingEmail) { setError(`Fração ${missingEmail.identifier}: falta o email do proprietário.`); return }
     if (!balanced && !window.confirm(`A soma da permilagem é ${total.toFixed(3)}‰ (devia ser 1000‰). Criar mesmo assim? Podes corrigir depois em Frações.`)) return
@@ -92,7 +100,7 @@ export default function AdminSetup() {
       })
       await reload()
       setSelectedId(condo.id)
-      navigate(rows.length ? '/' : '/fracoes')
+      navigate(rows.length ? '/resumo' : '/fracoes')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -166,7 +174,10 @@ export default function AdminSetup() {
                 </div>
                 {rows.map((r, i) => (
                   <div key={i} className="setup-row">
-                    <input aria-label={`Fração ${i + 1}: identificação`} value={r.identifier} onChange={(e) => setRow(i, 'identifier', e.target.value)} required />
+                    <input aria-label={`Fração ${i + 1}: identificação`} value={r.identifier} onChange={(e) => setRow(i, 'identifier', e.target.value)} required
+                      aria-invalid={duplicates[i] ? 'true' : undefined}
+                      title={duplicates[i] ? `Repetida: é a mesma fração que "${duplicates[i]}"` : undefined}
+                      style={duplicates[i] ? { borderColor: 'var(--danger)', background: 'var(--danger-soft)' } : undefined} />
                     <select aria-label={`Fração ${i + 1}: tipo`} value={r.fraction_type} onChange={(e) => setRow(i, 'fraction_type', e.target.value)}>
                       {TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </select>
@@ -178,6 +189,11 @@ export default function AdminSetup() {
                   </div>
                 ))}
               </div>
+              {Object.keys(duplicates).length > 0 && (
+                <div className="msg error">
+                  Frações repetidas: {Object.entries(duplicates).map(([i, prev]) => `"${rows[i].identifier}" = "${prev}"`).join(', ')}.
+                </div>
+              )}
               <div className="row between" style={{ alignItems: 'center', marginTop: '.8rem', gap: '.6rem' }}>
                 <div className="row" style={{ gap: '.4rem' }}>
                   <button type="button" className="btn secondary small" onClick={addRow}>+ Adicionar fração</button>

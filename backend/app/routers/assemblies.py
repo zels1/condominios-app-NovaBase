@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from .. import models, schemas
 from ..database import get_db
-from ..auth import get_current_user, require_condo_admin, get_user_fraction_ids
+from ..auth import get_current_user, require_condo_admin, require_condo_member, get_user_fraction_ids
 
 router = APIRouter(prefix="/condominiums/{condominium_id}/assemblies", tags=["Assembleias"])
 
@@ -87,6 +87,7 @@ def create_assembly(condominium_id: str, payload: schemas.AssemblyCreate, db: Se
 
 @router.get("", response_model=List[schemas.AssemblyOut])
 def list_assemblies(condominium_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    require_condo_member(db, user, condominium_id)
     return db.query(models.Assembly).filter(models.Assembly.condominium_id == condominium_id).order_by(models.Assembly.scheduled_at.desc()).all()
 
 
@@ -115,6 +116,7 @@ def add_agenda_item(condominium_id: str, assembly_id: str, payload: schemas.Agen
 
 @router.get("/{assembly_id}/agenda", response_model=List[schemas.AgendaItemOut])
 def list_agenda(condominium_id: str, assembly_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    require_condo_member(db, user, condominium_id)
     _get_assembly(db, condominium_id, assembly_id)
     return db.query(models.AgendaItem).filter(models.AgendaItem.assembly_id == assembly_id).order_by(models.AgendaItem.order).all()
 
@@ -130,7 +132,13 @@ def submit_proxy(
 ):
     """Um condómino pode submeter a procuração da sua própria fração; o admin pode submeter
     para qualquer fração (ex: procuração em papel entregue à mão)."""
-    if user.role == models.UserRole.owner and payload.fraction_id not in get_user_fraction_ids(db, user):
+    _get_assembly(db, condominium_id, assembly_id)
+    fraction = db.query(models.Fraction).filter(
+        models.Fraction.id == payload.fraction_id, models.Fraction.condominium_id == condominium_id
+    ).first()
+    if not fraction:
+        raise HTTPException(404, "Fração não encontrada neste condomínio.")
+    if not _is_condo_admin(db, user, condominium_id) and payload.fraction_id not in get_user_fraction_ids(db, user):
         raise HTTPException(403, "Essa fração não lhe pertence.")
     existing = db.query(models.Proxy).filter(models.Proxy.assembly_id == assembly_id, models.Proxy.fraction_id == payload.fraction_id).first()
     if existing:
@@ -167,6 +175,12 @@ def validate_proxy(
             db.add(att)
         att.attendance_type = "proxy"
         att.proxy_id = proxy.id
+    else:
+        att = db.query(models.Attendance).filter(models.Attendance.assembly_id == assembly_id, models.Attendance.proxy_id == proxy.id).first()
+        if att:
+            att.proxy_id = None
+            if att.attendance_type == "proxy":
+                att.attendance_type = "absent"
     db.commit()
     return {"ok": True, "status": proxy.status}
 
@@ -174,7 +188,8 @@ def validate_proxy(
 # ---------- Attendance (check-in) ----------
 @router.post("/{assembly_id}/attendance/{fraction_id}/check-in")
 def check_in(condominium_id: str, assembly_id: str, fraction_id: str, db: Session = Depends(get_db), user: models.User = Depends(require_condo_admin)):
-    from datetime import datetime
+    _get_assembly(db, condominium_id, assembly_id)
+    _get_condo_fraction(db, condominium_id, fraction_id)
     att = db.query(models.Attendance).filter(models.Attendance.assembly_id == assembly_id, models.Attendance.fraction_id == fraction_id).first()
     if not att:
         att = models.Attendance(assembly_id=assembly_id, fraction_id=fraction_id)
@@ -185,9 +200,84 @@ def check_in(condominium_id: str, assembly_id: str, fraction_id: str, db: Sessio
     return {"ok": True}
 
 
+def _get_condo_fraction(db: Session, condominium_id: str, fraction_id: str) -> models.Fraction:
+    fraction = db.query(models.Fraction).filter(
+        models.Fraction.id == fraction_id, models.Fraction.condominium_id == condominium_id
+    ).first()
+    if not fraction:
+        raise HTTPException(404, "Fração não encontrada neste condomínio.")
+    return fraction
+
+
+@router.put("/{assembly_id}/attendance/{fraction_id}")
+def set_attendance(
+    condominium_id: str,
+    assembly_id: str,
+    fraction_id: str,
+    payload: schemas.AttendanceSet,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_condo_admin),
+):
+    """Admin marca a presença de cada condómino/fração: presente, representado por
+    procuração (indicando o procurador) ou ausente. Possível até a assembleia ser encerrada."""
+    assembly = _get_assembly(db, condominium_id, assembly_id)
+    if _status_value(assembly.status) == models.AssemblyStatus.closed.value:
+        raise HTTPException(400, "A assembleia está encerrada: já não é possível alterar presenças.")
+    fraction = _get_condo_fraction(db, condominium_id, fraction_id)
+    kind = payload.attendance_type
+    if kind not in ("present", "proxy", "absent"):
+        raise HTTPException(400, "Presença inválida: usa present, proxy ou absent.")
+
+    att = db.query(models.Attendance).filter(
+        models.Attendance.assembly_id == assembly_id, models.Attendance.fraction_id == fraction.id
+    ).first()
+    if kind == "absent":
+        has_votes = (
+            db.query(models.Vote)
+            .join(models.AgendaItem, models.Vote.agenda_item_id == models.AgendaItem.id)
+            .filter(models.AgendaItem.assembly_id == assembly_id, models.Vote.fraction_id == fraction.id)
+            .first()
+        )
+        if has_votes:
+            raise HTTPException(409, f"A fração {fraction.identifier} já tem votos registados. Anula primeiro os votos para a marcar como ausente.")
+        if att:
+            att.attendance_type = "absent"
+            att.proxy_id = None
+            att.checked_in_at = None
+        db.commit()
+        return {"ok": True, "attendance_type": "absent"}
+
+    if not att:
+        att = models.Attendance(assembly_id=assembly_id, fraction_id=fraction.id)
+        db.add(att)
+    att.attendance_type = kind
+    att.checked_in_at = att.checked_in_at or datetime.utcnow()
+    if kind == "present":
+        att.proxy_id = None
+    else:
+        holder = (payload.proxy_holder_name or "").strip()
+        proxy = db.query(models.Proxy).filter(
+            models.Proxy.assembly_id == assembly_id, models.Proxy.fraction_id == fraction.id
+        ).first()
+        if not holder and not proxy:
+            raise HTTPException(400, "Indica o nome do procurador.")
+        if not proxy:
+            proxy = models.Proxy(assembly_id=assembly_id, fraction_id=fraction.id, proxy_holder_name=holder)
+            db.add(proxy)
+        elif holder:
+            proxy.proxy_holder_name = holder
+        # procuração apresentada ao admin na sala = validada
+        proxy.status = models.ProxyStatus.validated
+        db.flush()
+        att.proxy_id = proxy.id
+    db.commit()
+    return {"ok": True, "attendance_type": kind}
+
+
 @router.get("/{assembly_id}/attendance")
 def get_attendance_summary(condominium_id: str, assembly_id: str, db: Session = Depends(get_db), user: models.User = Depends(require_condo_admin)):
     """Resumo de quórum: soma de permilagem presente/representada vs. total do condomínio."""
+    _get_assembly(db, condominium_id, assembly_id)
     fractions = db.query(models.Fraction).filter(models.Fraction.condominium_id == condominium_id, models.Fraction.is_active == True).all()  # noqa: E712
     total_permilagem = sum(float(f.permilagem) for f in fractions)
     attendances = db.query(models.Attendance).filter(models.Attendance.assembly_id == assembly_id).all()
@@ -251,6 +341,24 @@ def voting_sheet(condominium_id: str, assembly_id: str, db: Session = Depends(ge
         a.fraction_id: a.attendance_type
         for a in db.query(models.Attendance).filter(models.Attendance.assembly_id == assembly_id).all()
     }
+    proxies = {
+        p.fraction_id: p
+        for p in db.query(models.Proxy).filter(models.Proxy.assembly_id == assembly_id).all()
+    }
+    today = date.today()
+    owner_rows = (
+        db.query(models.FractionOwner.fraction_id, models.User.full_name, models.FractionOwner.invited_email)
+        .outerjoin(models.User, models.User.id == models.FractionOwner.user_id)
+        .filter(
+            models.FractionOwner.fraction_id.in_([f.id for f in fractions]),
+            (models.FractionOwner.end_date == None) | (models.FractionOwner.end_date >= today),  # noqa: E711
+        )
+        .order_by(models.FractionOwner.is_primary_contact.desc())
+        .all()
+    ) if fractions else []
+    owners = {}
+    for fid, name, invited in owner_rows:
+        owners.setdefault(fid, []).append(name or invited or "—")
     votes = (
         db.query(models.Vote)
         .join(models.AgendaItem, models.Vote.agenda_item_id == models.AgendaItem.id)
@@ -266,6 +374,9 @@ def voting_sheet(condominium_id: str, assembly_id: str, db: Session = Depends(ge
             "identifier": f.identifier,
             "permilagem": float(f.permilagem),
             "attendance": attendance.get(f.id, "absent"),
+            "owners": owners.get(f.id, []),
+            "proxy_holder_name": proxies[f.id].proxy_holder_name if f.id in proxies else None,
+            "proxy_status": _status_value(proxies[f.id].status) if f.id in proxies else None,
             "votes": by_fraction.get(f.id, {}),
         }
         for f in fractions
@@ -373,6 +484,7 @@ def delete_vote(
 
 @router.get("/{assembly_id}/agenda/{agenda_item_id}/results")
 def vote_results(condominium_id: str, assembly_id: str, agenda_item_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    require_condo_member(db, user, condominium_id)
     assembly = _get_assembly(db, condominium_id, assembly_id)
     item = _get_agenda_item(db, assembly, agenda_item_id)
     votes = db.query(models.Vote).filter(models.Vote.agenda_item_id == item.id).all()

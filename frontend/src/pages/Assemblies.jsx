@@ -8,7 +8,8 @@ const STATUS_LABELS = {
   closed: { text: 'Encerrada', cls: 'warn' },
 }
 const CHOICE_LABELS = { favor: 'A favor', against: 'Contra', abstain: 'Abstenção' }
-const ATTENDANCE_LABELS = { present: 'Presente', proxy: 'Procuração', absent: 'Ausente' }
+const ATTENDANCE_LABELS = { present: 'Presente', proxy: 'Representado', absent: 'Ausente' }
+const PROXY_STATUS = { pending_validation: 'Por validar', validated: 'Validada', rejected: 'Rejeitada' }
 
 function StatusBadge({ status }) {
   const s = STATUS_LABELS[status] || { text: status, cls: '' }
@@ -179,10 +180,7 @@ function AssemblyDetail({ condoId, assembly: initialAssembly, isAdmin, onBack })
       )}
 
       {isAdmin && attendance && (
-        <div className="card">
-          <h3>Quórum</h3>
-          <p>{attendance.present_permilagem.toFixed(1)}‰ de {attendance.total_permilagem.toFixed(1)}‰ presente/representado ({attendance.quorum_percent}%)</p>
-        </div>
+        <AttendanceCard condoId={condoId} assembly={assembly} sheet={sheet} attendance={attendance} onChange={load} />
       )}
 
       <div className="card">
@@ -203,6 +201,7 @@ function AssemblyDetail({ condoId, assembly: initialAssembly, isAdmin, onBack })
               item={item}
               isAdmin={isAdmin}
               myFractions={myFractions}
+              sheet={sheet}
               reloadKey={reloadKey}
               onVoted={load}
             />
@@ -210,10 +209,6 @@ function AssemblyDetail({ condoId, assembly: initialAssembly, isAdmin, onBack })
           {agenda.length === 0 && <p className="hint">Ainda sem pontos na ordem de trabalhos.</p>}
         </div>
       </div>
-
-      {isAdmin && assembly.status !== 'scheduled' && agenda.some((i) => i.requires_vote) && (
-        <VotingSheet condoId={condoId} assembly={assembly} agenda={agenda.filter((i) => i.requires_vote)} sheet={sheet} onChange={load} />
-      )}
 
       <div className="card">
         <h3>Procurações</h3>
@@ -244,7 +239,7 @@ function AssemblyDetail({ condoId, assembly: initialAssembly, isAdmin, onBack })
               <tbody>
                 {proxies.map((p) => (
                   <tr key={p.id}>
-                    <td>{fractions.find((f) => f.id === p.fraction_id)?.identifier || p.fraction_id}</td><td>{p.proxy_holder_name}</td><td><span className="badge">{p.status}</span></td>
+                    <td>{fractions.find((f) => f.id === p.fraction_id)?.identifier || p.fraction_id}</td><td>{p.proxy_holder_name}</td><td><span className={`badge ${p.status === 'validated' ? 'ok' : p.status === 'rejected' ? 'danger' : 'warn'}`}>{PROXY_STATUS[p.status] || p.status}</span></td>
                     <td>
                       {p.status === 'pending_validation' && (
                         <div className="row">
@@ -265,7 +260,7 @@ function AssemblyDetail({ condoId, assembly: initialAssembly, isAdmin, onBack })
   )
 }
 
-function AgendaItemCard({ condoId, assemblyId, status, item, isAdmin, myFractions, reloadKey, onVoted }) {
+function AgendaItemCard({ condoId, assemblyId, status, item, isAdmin, myFractions, sheet, reloadKey, onVoted }) {
   const [results, setResults] = useState(null)
   const [busy, setBusy] = useState(null)
   const [msg, setMsg] = useState(null)
@@ -338,109 +333,171 @@ function AgendaItemCard({ condoId, assemblyId, status, item, isAdmin, myFraction
           })}
         </div>
       )}
+      {isAdmin && item.requires_vote && (
+        <AdminVotes condoId={condoId} assemblyId={assemblyId} status={status} item={item} sheet={sheet} onChange={onVoted} />
+      )}
+
       {msg && <div className={`msg ${msg.type}`} style={{ marginTop: '.5em' }}>{msg.text}</div>}
     </div>
   )
 }
 
-function VotingSheet({ condoId, assembly, agenda, sheet, onChange }) {
+function ownersText(r) {
+  return r.owners && r.owners.length ? r.owners.join(', ') : 'Sem proprietário registado'
+}
+
+// Presenças: o administrador marca cada condómino/fração como presente, representado por
+// procuração (com o nome do procurador) ou ausente. O quórum atualiza na hora.
+function AttendanceCard({ condoId, assembly, sheet, attendance, onChange }) {
+  const [drafts, setDrafts] = useState({}) // fraction_id → nome do procurador a escrever
+  const [busy, setBusy] = useState(null)
   const [msg, setMsg] = useState(null)
-  const [busy, setBusy] = useState(false)
-  const editable = assembly.status === 'in_progress'
+  const editable = assembly.status !== 'closed'
   const base = `/condominiums/${condoId}/assemblies/${assembly.id}`
+  const counts = sheet.reduce((c, r) => ({ ...c, [r.attendance]: (c[r.attendance] || 0) + 1 }), {})
 
-  async function setVote(fractionId, itemId, choice) {
+  async function setAttendance(r, type, holder) {
     setMsg(null)
-    setBusy(true)
+    if (type === 'proxy' && !(holder || r.proxy_holder_name)) {
+      setDrafts((d) => ({ ...d, [r.fraction_id]: d[r.fraction_id] ?? '' }))
+      return
+    }
+    setBusy(r.fraction_id)
     try {
-      if (choice) await api.post(`${base}/agenda/${itemId}/votes`, { fraction_id: fractionId, choice })
-      else await api.del(`${base}/agenda/${itemId}/votes/${fractionId}`)
+      await api.put(`${base}/attendance/${r.fraction_id}`, { attendance_type: type, proxy_holder_name: type === 'proxy' ? (holder || r.proxy_holder_name) : undefined })
+      setDrafts((d) => { const n = { ...d }; delete n[r.fraction_id]; return n })
       await onChange()
     } catch (err) { setMsg(err.message) }
-    setBusy(false)
-  }
-
-  async function checkIn(fractionId) {
-    setMsg(null)
-    try {
-      await api.post(`${base}/attendance/${fractionId}/check-in`)
-      await onChange()
-    } catch (err) { setMsg(err.message) }
-  }
-
-  // Preenche com o mesmo voto todas as frações presentes/representadas que ainda não votaram neste ponto
-  async function fillRemaining(itemId, choice) {
-    const targets = sheet.filter((r) => r.attendance !== 'absent' && !r.votes[itemId])
-    if (targets.length === 0) { setMsg('Não há frações presentes sem voto neste ponto.'); return }
-    if (!window.confirm(`Registar "${CHOICE_LABELS[choice]}" para ${targets.length} fração(ões) presente(s) que ainda não votaram?`)) return
-    setMsg(null)
-    setBusy(true)
-    try {
-      for (const r of targets) {
-        await api.post(`${base}/agenda/${itemId}/votes`, { fraction_id: r.fraction_id, choice })
-      }
-      await onChange()
-    } catch (err) { setMsg(err.message) }
-    setBusy(false)
+    setBusy(null)
   }
 
   return (
     <div className="card">
-      <h3>Registo de votos na sala</h3>
+      <div className="row between" style={{ alignItems: 'baseline' }}>
+        <h3 style={{ margin: 0 }}>Presenças e quórum</h3>
+        <span className={`badge ${attendance.quorum_percent > 50 ? 'ok' : 'warn'}`}>
+          {attendance.present_permilagem.toLocaleString('pt-PT', { maximumFractionDigits: 3 })}‰ de {attendance.total_permilagem.toLocaleString('pt-PT', { maximumFractionDigits: 3 })}‰ · {attendance.quorum_percent}%
+        </span>
+      </div>
       <p className="hint">
         {editable
-          ? 'Regista aqui os votos dados presencialmente. Ao registar um voto, a fração fica marcada como presente. Os votos dados pelos condóminos na app aparecem automaticamente.'
-          : 'Assembleia encerrada. Os votos já não podem ser alterados.'}
+          ? 'Marca quem está presente ou representado por procuração. Ao registar um voto, a fração também fica marcada como presente.'
+          : 'Assembleia encerrada: as presenças já não podem ser alteradas.'}
+        {' '}Presentes: {counts.present || 0} · Representados: {counts.proxy || 0} · Ausentes: {counts.absent || 0}
       </p>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Fração</th>
-              <th>‰</th>
-              <th>Presença</th>
-              {agenda.map((i) => <th key={i.id}>{i.title}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {sheet.map((r) => (
-              <tr key={r.fraction_id}>
-                <td><strong>{r.identifier}</strong></td>
-                <td>{r.permilagem.toFixed(1)}</td>
-                <td>
-                  {r.attendance === 'absent' && editable
-                    ? <button className="btn secondary small" onClick={() => checkIn(r.fraction_id)}>Marcar presente</button>
-                    : <span className={`badge ${r.attendance === 'absent' ? '' : 'ok'}`}>{ATTENDANCE_LABELS[r.attendance] || r.attendance}</span>}
-                </td>
-                {agenda.map((i) => (
-                  <td key={i.id}>
-                    {editable ? (
-                      <select disabled={busy} value={r.votes[i.id] || ''} onChange={(e) => setVote(r.fraction_id, i.id, e.target.value)}>
-                        <option value="">—</option>
-                        <option value="favor">A favor</option>
-                        <option value="against">Contra</option>
-                        <option value="abstain">Abstenção</option>
-                      </select>
-                    ) : (CHOICE_LABELS[r.votes[i.id]] || '—')}
-                  </td>
-                ))}
-              </tr>
-            ))}
-            {editable && sheet.length > 0 && (
-              <tr>
-                <td colSpan={3} className="hint">Presentes sem voto →</td>
-                {agenda.map((i) => (
-                  <td key={i.id}>
-                    <button className="btn small" disabled={busy} onClick={() => fillRemaining(i.id, 'favor')}>Todos a favor</button>
-                  </td>
-                ))}
-              </tr>
-            )}
-            {sheet.length === 0 && <tr><td colSpan={3 + agenda.length} className="empty">Ainda não há frações neste condomínio.</td></tr>}
-          </tbody>
-        </table>
+      <div className="stack" style={{ gap: 0 }}>
+        {sheet.map((r) => {
+          const draft = drafts[r.fraction_id]
+          return (
+            <div key={r.fraction_id} className="vote-row">
+              <div className="who">
+                <strong>{r.identifier}</strong> <span className="hint">· {r.permilagem.toLocaleString('pt-PT')}‰</span>
+                <div className="hint">{ownersText(r)}{r.attendance === 'proxy' && r.proxy_holder_name ? ` — representado por ${r.proxy_holder_name}` : ''}</div>
+              </div>
+              {editable ? (
+                <div className="stack" style={{ gap: '.3rem', alignItems: 'flex-end' }}>
+                  <div className="choice-group" role="group" aria-label={`Presença da fração ${r.identifier}`}>
+                    {['present', 'proxy', 'absent'].map((t) => (
+                      <button key={t} type="button" disabled={busy === r.fraction_id}
+                        className={`btn secondary small${r.attendance === t && draft === undefined ? ' selected' : ''}${t === 'absent' ? ' neutral' : ''}${t === 'proxy' && draft !== undefined ? ' selected' : ''}`}
+                        aria-pressed={r.attendance === t}
+                        onClick={() => setAttendance(r, t)}>
+                        {t === 'present' ? 'Presente' : t === 'proxy' ? 'Procuração' : 'Ausente'}
+                      </button>
+                    ))}
+                  </div>
+                  {(draft !== undefined || r.attendance === 'proxy') && (
+                    <form className="row" style={{ gap: '.3rem', flexWrap: 'nowrap' }}
+                      onSubmit={(e) => { e.preventDefault(); setAttendance(r, 'proxy', (draft ?? r.proxy_holder_name ?? '').trim()) }}>
+                      <input aria-label={`Procurador da fração ${r.identifier}`} placeholder="Nome do procurador" style={{ minWidth: 160 }}
+                        value={draft ?? r.proxy_holder_name ?? ''} onChange={(e) => setDrafts((d) => ({ ...d, [r.fraction_id]: e.target.value }))} required />
+                      <button className="btn small" disabled={busy === r.fraction_id}>Guardar</button>
+                    </form>
+                  )}
+                </div>
+              ) : (
+                <span className={`badge ${r.attendance === 'absent' ? '' : 'ok'}`}>{ATTENDANCE_LABELS[r.attendance] || r.attendance}</span>
+              )}
+            </div>
+          )
+        })}
+        {sheet.length === 0 && <p className="hint">Ainda não há frações neste condomínio.</p>}
       </div>
       {msg && <div className="msg error" style={{ marginTop: '.5em' }}>{msg}</div>}
     </div>
+  )
+}
+
+// Votos de cada condómino neste ponto da ordem de trabalhos, registados pelo administrador
+function AdminVotes({ condoId, assemblyId, status, item, sheet, onChange }) {
+  const [onlyPresent, setOnlyPresent] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const editable = status === 'in_progress'
+  const base = `/condominiums/${condoId}/assemblies/${assemblyId}`
+  const voted = sheet.filter((r) => r.votes[item.id]).length
+  const rows = sheet.filter((r) => !onlyPresent || r.attendance !== 'absent' || r.votes[item.id])
+
+  async function setVote(r, choice) {
+    setMsg(null); setBusy(true)
+    try {
+      if (choice) await api.post(`${base}/agenda/${item.id}/votes`, { fraction_id: r.fraction_id, choice })
+      else await api.del(`${base}/agenda/${item.id}/votes/${r.fraction_id}`)
+      await onChange()
+    } catch (err) { setMsg(err.message) }
+    setBusy(false)
+  }
+
+  async function fillRemaining(choice) {
+    const targets = sheet.filter((r) => r.attendance !== 'absent' && !r.votes[item.id])
+    if (targets.length === 0) { setMsg('Não há condóminos presentes sem voto neste ponto.'); return }
+    if (!window.confirm(`Registar "${CHOICE_LABELS[choice]}" para ${targets.length} fração(ões) presente(s) que ainda não votaram?`)) return
+    setMsg(null); setBusy(true)
+    try {
+      for (const r of targets) await api.post(`${base}/agenda/${item.id}/votes`, { fraction_id: r.fraction_id, choice })
+      await onChange()
+    } catch (err) { setMsg(err.message) }
+    setBusy(false)
+  }
+
+  if (status === 'scheduled') {
+    return <p className="hint" style={{ marginTop: '.5rem' }}>Os votos de cada condómino registam-se aqui quando iniciares a assembleia.</p>
+  }
+
+  return (
+    <details className="admin-votes" open={editable} style={{ marginTop: '.6rem' }}>
+      <summary><strong>Votos por condómino</strong> <span className="hint">({voted} de {sheet.length} frações votaram)</span></summary>
+      <div className="row between" style={{ margin: '.5rem 0 .2rem', gap: '.5rem' }}>
+        <label className="remember" style={{ margin: 0 }}>
+          <input type="checkbox" checked={onlyPresent} onChange={(e) => setOnlyPresent(e.target.checked)} /> Só presentes e representados
+        </label>
+        {editable && (
+          <button type="button" className="btn secondary small" disabled={busy} onClick={() => fillRemaining('favor')}>Presentes sem voto: todos a favor</button>
+        )}
+      </div>
+      {rows.length === 0 && <p className="hint">Ninguém marcado como presente. Marca as presenças acima, ou desmarca o filtro para ver todas as frações.</p>}
+      {rows.map((r) => {
+        const current = r.votes[item.id]
+        return (
+          <div key={r.fraction_id} className="vote-row">
+            <div className="who">
+              <strong>{r.identifier}</strong> <span className="hint">· {r.permilagem.toLocaleString('pt-PT')}‰ · {ATTENDANCE_LABELS[r.attendance]}</span>
+              <div className="hint">{ownersText(r)}{r.attendance === 'proxy' && r.proxy_holder_name ? ` — por ${r.proxy_holder_name}` : ''}</div>
+            </div>
+            {editable ? (
+              <div className="choice-group" role="group" aria-label={`Voto da fração ${r.identifier}`}>
+                <button type="button" disabled={busy} aria-pressed={current === 'favor'} className={`btn secondary small${current === 'favor' ? ' selected' : ''}`} onClick={() => setVote(r, 'favor')}>A favor</button>
+                <button type="button" disabled={busy} aria-pressed={current === 'against'} className={`btn secondary small against${current === 'against' ? ' selected' : ''}`} onClick={() => setVote(r, 'against')}>Contra</button>
+                <button type="button" disabled={busy} aria-pressed={current === 'abstain'} className={`btn secondary small neutral${current === 'abstain' ? ' selected' : ''}`} onClick={() => setVote(r, 'abstain')}>Abstenção</button>
+                {current && <button type="button" disabled={busy} className="link-button small" onClick={() => setVote(r, null)} title="Anular este voto">Anular</button>}
+              </div>
+            ) : (
+              <span className={`badge ${current === 'favor' ? 'ok' : current === 'against' ? 'danger' : ''}`}>{CHOICE_LABELS[current] || 'Não votou'}</span>
+            )}
+          </div>
+        )
+      })}
+      {msg && <div className="msg error" style={{ marginTop: '.5em' }}>{msg}</div>}
+    </details>
   )
 }

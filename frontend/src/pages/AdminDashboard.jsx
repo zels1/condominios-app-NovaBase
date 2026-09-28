@@ -44,6 +44,14 @@ export default function AdminDashboard() {
         <div className="card stat">
           <span className="label">Ocorrências pendentes</span>
           <span className="value">{summary.pending_occurrences}</span>
+          <Link to="/ocorrencias" style={{ fontSize: '.85rem' }}>Ver ocorrências →</Link>
+        </div>
+        <div className="card stat">
+          <span className="label">Manutenção</span>
+          <span className="value" style={{ color: summary.maintenance_overdue > 0 ? 'var(--danger)' : 'inherit' }}>
+            {summary.maintenance_overdue > 0 ? `${summary.maintenance_overdue} em atraso` : 'Em dia'}
+          </span>
+          <span className="label">{summary.maintenance_due_soon} prevista(s) nos próximos 30 dias</span>
           <Link to="/manutencao" style={{ fontSize: '.85rem' }}>Ver manutenção →</Link>
         </div>
         <div className="card stat">

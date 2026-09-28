@@ -7,7 +7,7 @@ import { DOC_ACCEPT, checkDocFile, uploadDocFile } from '../lib/files'
 const EMPTY_PROFILE = {
   full_name: '', email: '', phone: '', landline_phone: '', nif: '', correspondence_address: '', iban: '', notes: '',
 }
-const EMPTY_NEW = { ...EMPTY_PROFILE, fraction_id: '', ownership_share: '100', is_primary_contact: true }
+const EMPTY_NEW = { ...EMPTY_PROFILE, fraction_id: '', ownership_share: '1000', is_primary_contact: true }
 
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString('pt-PT') : '' }
 
@@ -155,7 +155,8 @@ export default function AdminOwners() {
     setBusy(true)
     setError(null)
     try {
-      const share = Math.min(100, Math.max(1, parseFloat(String(newForm.ownership_share).replace(',', '.')) || 100)) / 100
+      // quota de propriedade em permilagem: 1000‰ = único proprietário, 500‰ = metade
+      const share = Math.min(1000, Math.max(1, parseFloat(String(newForm.ownership_share).replace(',', '.')) || 1000)) / 1000
       await api.post(`/condominiums/${selectedCondo.id}/owners`, { ...newForm, ownership_share: share })
       setNotice(`${newForm.full_name} adicionado(a). Quando criar conta com ${newForm.email}, fica logo ligado(a) a esta ficha.`)
       setNewForm(EMPTY_NEW)
@@ -194,6 +195,7 @@ export default function AdminOwners() {
 
   if (!selectedCondo) return null
 
+  const selectedFraction = fractions.find((f) => f.id === newForm.fraction_id)
   const q = query.trim().toLowerCase()
   const visible = owners.filter((o) => !q || [o.full_name, o.email, o.phone, o.landline_phone, o.nif, ...o.fractions.map((f) => f.fraction_identifier)]
     .some((v) => (v || '').toLowerCase().includes(q)))
@@ -216,18 +218,20 @@ export default function AdminOwners() {
           <form onSubmit={addOwner} className="stack">
             <ProfileFields form={newForm} setForm={setNewForm}
               emailHint="Quando a pessoa criar conta com este email, fica automaticamente ligada a esta ficha." />
-            <div className="row">
-              <div className="field" style={{ flex: 1, minWidth: 160 }}>
-                <label>Fração *</label>
-                <select value={newForm.fraction_id} onChange={(e) => setNewForm({ ...newForm, fraction_id: e.target.value })} required>
+            <div className="row form-row">
+              <div className="field" style={{ flex: 1, minWidth: 180 }}>
+                <label htmlFor="new-fraction">Fração *</label>
+                <select id="new-fraction" value={newForm.fraction_id} onChange={(e) => setNewForm({ ...newForm, fraction_id: e.target.value })} required>
                   <option value="">Selecionar…</option>
                   {fractions.map((f) => <option key={f.id} value={f.id}>{f.identifier}</option>)}
                 </select>
+                {selectedFraction && <span className="hint">Permilagem da fração no prédio: {Number(selectedFraction.permilagem).toLocaleString('pt-PT')}‰</span>}
               </div>
-              <div className="field" style={{ width: 150 }}>
-                <label>Quota de propriedade (%)</label>
-                <input type="number" min={1} max={100} step="any" value={newForm.ownership_share}
+              <div className="field" style={{ flex: 1, minWidth: 180 }}>
+                <label htmlFor="new-share">Quota de propriedade (permilagem)</label>
+                <input id="new-share" type="number" min={1} max={1000} step="any" value={newForm.ownership_share}
                   onChange={(e) => setNewForm({ ...newForm, ownership_share: e.target.value })} />
+                <span className="hint">Parte da fração que pertence a esta pessoa: 1000‰ = único proprietário, 500‰ = metade.</span>
               </div>
             </div>
             <label className="remember" style={{ margin: 0 }}>
@@ -339,7 +343,7 @@ export default function AdminOwners() {
                       <div key={f.id} className="row" style={{ gap: '.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
                         <span className="badge">
                           {f.fraction_identifier}
-                          {f.ownership_share < 1 && ` · ${Math.round(f.ownership_share * 100)}%`}
+                          {f.ownership_share < 1 && ` · ${Math.round(f.ownership_share * 1000)}‰`}
                           {!o.is_pending && (
                             <button onClick={() => removeFraction(f.fraction_id, f.id)} title="Remover esta associação" aria-label={`Remover associação à fração ${f.fraction_identifier}`}
                               style={{ marginLeft: '.4em', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--danger)', fontWeight: 700 }}>×</button>

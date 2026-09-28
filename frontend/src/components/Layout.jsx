@@ -4,27 +4,56 @@ import { useAuth } from '../lib/AuthContext'
 import { useCondo } from '../lib/CondoContext'
 import DomvusLogo from './DomvusLogo'
 
-const ADMIN_LINKS = [
-  { to: '/', label: 'Resumo', end: true },
-  { to: '/fracoes', label: 'Frações' },
-  { to: '/condominos', label: 'Condóminos' },
-  { to: '/condominio', label: 'Dados do condomínio' },
-  { to: '/quotas', label: 'Orçamento e Quotas' },
-  { to: '/conta', label: 'Conta corrente' },
-  { to: '/juros', label: 'Juros de mora' },
-  { to: '/lembretes', label: 'Lembretes' },
-  { to: '/manutencao', label: 'Manutenção' },
-  { to: '/fornecedores', label: 'Fornecedores e despesas' },
-  { to: '/assembleias', label: 'Assembleias' },
-  { to: '/documentos', label: 'Documentos' },
+// Menu lateral organizado por categorias
+const ADMIN_MENU = [
+  { links: [{ to: '/', label: 'Visão geral', end: true }] },
+  {
+    title: 'Condomínio',
+    links: [
+      { to: '/resumo', label: 'Resumo' },
+      { to: '/condominio', label: 'Dados do condomínio' },
+      { to: '/fracoes', label: 'Frações' },
+      { to: '/condominos', label: 'Condóminos' },
+    ],
+  },
+  {
+    title: 'Finanças',
+    links: [
+      { to: '/quotas', label: 'Orçamento e quotas' },
+      { to: '/conta', label: 'Conta corrente' },
+      { to: '/juros', label: 'Juros de mora' },
+      { to: '/lembretes', label: 'Lembretes' },
+      { to: '/fornecedores', label: 'Fornecedores e despesas' },
+    ],
+  },
+  {
+    title: 'Gestão',
+    links: [
+      { to: '/manutencao', label: 'Manutenção' },
+      { to: '/ocorrencias', label: 'Ocorrências' },
+      { to: '/assembleias', label: 'Assembleias' },
+      { to: '/documentos', label: 'Documentos' },
+    ],
+  },
 ]
 
-const OWNER_LINKS = [
-  { to: '/', label: 'As minhas quotas', end: true },
-  { to: '/conta', label: 'Conta do prédio' },
-  { to: '/manutencao', label: 'Ocorrências' },
-  { to: '/assembleias', label: 'Assembleias' },
-  { to: '/documentos', label: 'Documentos' },
+const OWNER_MENU = [
+  {
+    title: 'A minha conta',
+    links: [
+      { to: '/', label: 'As minhas quotas', end: true },
+      { to: '/conta', label: 'Conta do prédio' },
+    ],
+  },
+  {
+    title: 'O prédio',
+    links: [
+      { to: '/ocorrencias', label: 'Ocorrências' },
+      { to: '/manutencao', label: 'Manutenção' },
+      { to: '/assembleias', label: 'Assembleias' },
+      { to: '/documentos', label: 'Documentos' },
+    ],
+  },
 ]
 
 export default function Layout() {
@@ -58,7 +87,7 @@ export default function Layout() {
     return <Navigate to="/configurar" replace />
   }
 
-  const links = isAdmin ? ADMIN_LINKS : OWNER_LINKS
+  const menu = isAdmin ? ADMIN_MENU : OWNER_MENU
 
   return (
     <div className="app-shell">
@@ -86,12 +115,17 @@ export default function Layout() {
           </select>
         )}
         <nav id="main-menu">
-          {links.map((l) => (
-            <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => isActive ? 'active' : ''}>
-              {l.label}
-            </NavLink>
+          {menu.map((group, i) => (
+            <div key={group.title || i} className="nav-group">
+              {group.title && <div className="nav-group-title">{group.title}</div>}
+              {group.links.map((l) => (
+                <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => isActive ? 'active' : ''}>
+                  {l.label}
+                </NavLink>
+              ))}
+            </div>
           ))}
-          {isAdmin && <NavLink to="/configurar">+ Novo condomínio</NavLink>}
+          {isAdmin && <NavLink to="/configurar" className="nav-new">+ Novo condomínio</NavLink>}
         </nav>
         <div className="sidebar-footer">
           <div>{me?.full_name || user?.email}</div>

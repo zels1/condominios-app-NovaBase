@@ -239,7 +239,7 @@ function FractionCard({ fraction, condoId, expanded, onToggle, editing, onEdit, 
               <span>
                 {o.user?.full_name || o.invited_email}{' '}
                 {o.user?.email && <span className="hint">({o.user.email})</span>}{' '}
-                {o.ownership_share < 1 && <span className="badge">{Math.round(o.ownership_share * 100)}%</span>}{' '}
+                {o.ownership_share < 1 && <span className="badge" title="Quota de propriedade">{Math.round(o.ownership_share * 1000)}‰</span>}{' '}
                 {o.is_primary_contact && <span className="badge ok">contacto principal</span>}{' '}
                 {!o.user_id && <span className="badge warn">convite pendente</span>}
               </span>

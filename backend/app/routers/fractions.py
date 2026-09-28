@@ -11,6 +11,7 @@ from ..database import get_db
 from ..auth import get_current_user, require_condo_admin, require_condo_member, get_user_fraction_ids
 from ..services.storage import signed_url, delete_file, StorageError, STORAGE_PREFIX, DOCUMENT_BUCKET
 from ..services.purge import delete_fraction, fraction_summary, delete_orphan_owners
+from ..services.fraction_ids import find_equivalent
 
 
 def _get_fraction(db: Session, condominium_id: str, fraction_id: str) -> models.Fraction:
@@ -24,6 +25,14 @@ def _get_fraction(db: Session, condominium_id: str, fraction_id: str) -> models.
 router = APIRouter(prefix="/condominiums/{condominium_id}/fractions", tags=["Frações"])
 
 
+def _check_duplicate(db: Session, condominium_id: str, identifier: str, exclude_id=None):
+    """Impede frações equivalentes no mesmo condomínio ("1º Dto" = "1ºdto" = "1 Direito")."""
+    existing = db.query(models.Fraction).filter(models.Fraction.condominium_id == condominium_id).all()
+    clash = find_equivalent(existing, identifier, exclude_id=exclude_id)
+    if clash:
+        raise HTTPException(409, f"Já existe a fração \"{clash.identifier}\" neste condomínio — \"{identifier}\" seria a mesma fração.")
+
+
 @router.post("", response_model=schemas.FractionOut)
 def create_fraction(
     condominium_id: str,
@@ -31,7 +40,12 @@ def create_fraction(
     db: Session = Depends(get_db),
     user: models.User = Depends(require_condo_admin),
 ):
-    fraction = models.Fraction(condominium_id=condominium_id, **payload.model_dump())
+    data = payload.model_dump()
+    data["identifier"] = (data.get("identifier") or "").strip()
+    if not data["identifier"]:
+        raise HTTPException(400, "Indica o identificador da fração.")
+    _check_duplicate(db, condominium_id, data["identifier"])
+    fraction = models.Fraction(condominium_id=condominium_id, **data)
     db.add(fraction)
     db.commit()
     db.refresh(fraction)
@@ -44,6 +58,7 @@ def list_fractions(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
+    require_condo_member(db, user, condominium_id)
     return (
         db.query(models.Fraction)
         .filter(models.Fraction.condominium_id == condominium_id, models.Fraction.is_active == True)  # noqa: E712
@@ -80,13 +95,14 @@ def update_fraction(
     # só altera os campos enviados (ex: mudar o identificador não apaga o seguro)
     for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(fraction, k, v.strip() if isinstance(v, str) and k == "identifier" else v)
-    clash = db.query(models.Fraction).filter(
-        models.Fraction.condominium_id == condominium_id, models.Fraction.identifier == fraction.identifier,
-        models.Fraction.id != fraction.id,
-    ).first()
-    if clash:
+    if not (fraction.identifier or "").strip():
         db.rollback()
-        raise HTTPException(409, f"Já existe outra fração com o identificador \"{fraction.identifier}\".")
+        raise HTTPException(400, "Indica o identificador da fração.")
+    try:
+        _check_duplicate(db, condominium_id, fraction.identifier, exclude_id=fraction.id)
+    except HTTPException:
+        db.rollback()
+        raise
     db.commit()
     db.refresh(fraction)
     return fraction
