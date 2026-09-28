@@ -12,7 +12,8 @@ from .. import models, schemas
 from ..database import get_db
 from ..auth import require_condo_admin
 from ..services.quota_generation import (
-    CATEGORIES, METHODS, QuotaGenerationError, ensure_default_charge_types, compute_monthly_lines, launch_extra_quota,
+    CATEGORIES, METHODS, FREQUENCY_MONTHS, QuotaGenerationError, ensure_default_charge_types, compute_monthly_lines,
+    launch_extra_quota,
 )
 
 router = APIRouter(prefix="/condominiums/{condominium_id}/charge-types", tags=["Rubricas"])
@@ -36,6 +37,29 @@ def _validate(payload: schemas.ChargeTypeCreate):
         raise HTTPException(400, "O cálculo pelo orçamento anual só se aplica a rubricas mensais.")
     if payload.method == "percentagem" and payload.value > 100:
         raise HTTPException(400, "A percentagem não pode passar de 100%.")
+    if payload.recurring and payload.frequency not in FREQUENCY_MONTHS:
+        raise HTTPException(400, "Frequência inválida: usa mensal, trimestral, semestral ou anual.")
+    if payload.method == "manual" and payload.manual_amounts is not None:
+        if any((v or 0) < 0 for v in payload.manual_amounts.values()):
+            raise HTTPException(400, "Os valores por fração não podem ser negativos.")
+
+
+def _save_manual_amounts(db: Session, condominium_id: str, ct: models.ChargeType, amounts: dict):
+    """Cálculo manual: grava o valor de cada fração (vazio ou 0 = não paga esta rubrica)."""
+    fractions = {f.id for f in db.query(models.Fraction).filter(models.Fraction.condominium_id == condominium_id).all()}
+    existing = {r.fraction_id: r for r in db.query(models.FractionCharge).filter(models.FractionCharge.charge_type_id == ct.id).all()}
+    for fid in fractions:
+        v = amounts.get(fid)
+        row = existing.get(fid)
+        if v is None or float(v) <= 0:
+            if row:
+                db.delete(row)
+            continue
+        if not row:
+            row = models.FractionCharge(fraction_id=fid, charge_type_id=ct.id)
+            db.add(row)
+        row.mode = "valor"
+        row.amount = v
 
 
 @router.get("", response_model=List[schemas.ChargeTypeOut])
@@ -49,12 +73,15 @@ def list_charge_types(condominium_id: str, db: Session = Depends(get_db), user: 
 def create_charge_type(condominium_id: str, payload: schemas.ChargeTypeCreate, db: Session = Depends(get_db), user: models.User = Depends(require_condo_admin)):
     _validate(payload)
     existing = ensure_default_charge_types(db, condominium_id)
-    data = payload.model_dump()
+    data = payload.model_dump(exclude={"manual_amounts"})
     data["name"] = data["name"].strip()
     if not payload.position:
         data["position"] = max([t.position or 0 for t in existing] + [0]) + 1
     ct = models.ChargeType(condominium_id=condominium_id, **data)
     db.add(ct)
+    db.flush()
+    if payload.method == "manual" and payload.manual_amounts is not None:
+        _save_manual_amounts(db, condominium_id, ct, payload.manual_amounts)
     db.commit()
     db.refresh(ct)
     return ct
@@ -64,8 +91,10 @@ def create_charge_type(condominium_id: str, payload: schemas.ChargeTypeCreate, d
 def update_charge_type(condominium_id: str, charge_type_id: str, payload: schemas.ChargeTypeCreate, db: Session = Depends(get_db), user: models.User = Depends(require_condo_admin)):
     _validate(payload)
     ct = _get(db, condominium_id, charge_type_id)
-    for k, v in payload.model_dump().items():
+    for k, v in payload.model_dump(exclude={"manual_amounts"}).items():
         setattr(ct, k, v.strip() if k == "name" else v)
+    if payload.method == "manual" and payload.manual_amounts is not None:
+        _save_manual_amounts(db, condominium_id, ct, payload.manual_amounts)
     db.commit()
     db.refresh(ct)
     return ct
@@ -156,6 +185,8 @@ def create_extra_quota(condominium_id: str, payload: schemas.ExtraQuotaCreate, d
     name = (payload.name or ct.name).strip()
     if payload.due_date < payload.reference_month.replace(day=1):
         raise HTTPException(400, "A data de vencimento não pode ser anterior ao mês de referência.")
+    if payload.method != "manual" and payload.total_amount <= 0:
+        raise HTTPException(400, "Indica o valor a cobrar.")
     try:
         return launch_extra_quota(
             db, condominium_id, ct, name, Decimal(str(payload.total_amount)), payload.method,

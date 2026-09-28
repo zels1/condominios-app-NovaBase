@@ -75,6 +75,7 @@ def check_permilagem_total(
     user: models.User = Depends(get_current_user),
 ):
     """Soma da permilagem de todas as frações ativas — deve idealmente ser 1000.000."""
+    require_condo_member(db, user, condominium_id)
     fractions = (
         db.query(models.Fraction)
         .filter(models.Fraction.condominium_id == condominium_id, models.Fraction.is_active == True)  # noqa: E712

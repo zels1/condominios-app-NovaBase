@@ -78,7 +78,6 @@ export default function Maintenance() {
   const [historyFor, setHistoryFor] = useState(null)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
-  const [importing, setImporting] = useState(false)
   const base = selectedCondo ? `/condominiums/${selectedCondo.id}/maintenance` : null
 
   async function load() {
@@ -139,7 +138,10 @@ export default function Maintenance() {
   }
 
   async function remove(t) {
-    if (!window.confirm(`Apagar "${t.title}" e todo o seu histórico? As despesas já lançadas mantêm-se.`)) return
+    const msg = t.source === 'auto'
+      ? `Retirar "${t.title}" da manutenção? Foi criada a partir do fornecedor ${t.supplier_name || ''} e não volta a aparecer. As despesas mantêm-se.`
+      : `Apagar "${t.title}" e todo o seu histórico? As despesas já lançadas mantêm-se.`
+    if (!window.confirm(msg)) return
     setError(null); setNotice(null)
     try {
       await api.del(`${base}/${t.id}`)
@@ -147,21 +149,6 @@ export default function Maintenance() {
       if (historyFor === t.id) setHistoryFor(null)
       await load()
     } catch (err) { setError(err.message) }
-  }
-
-  async function importServices() {
-    setImporting(true); setError(null); setNotice(null)
-    try {
-      const r = await api.post(`${base}/import-services`)
-      const parts = []
-      if (r.created.length) parts.push(`Criadas: ${r.created.join('; ')}.`)
-      if (r.logs_added) parts.push(`${r.logs_added} serviço(s) já pagos juntos ao histórico.`)
-      if (!r.created.length && !r.logs_added) parts.push('Já estava tudo atualizado: não há serviços novos para importar.')
-      if (r.skipped.length) parts.push(`Não são manutenção (ignorados): ${r.skipped.join(', ')}.`)
-      setNotice(parts.join(' '))
-      await load()
-    } catch (e) { setError(e.message) }
-    setImporting(false)
   }
 
   function edit(t) {
@@ -181,17 +168,12 @@ export default function Maintenance() {
       <div className="row between" style={{ alignItems: 'center', gap: '.6rem' }}>
         <h1 style={{ margin: 0 }}>Manutenção</h1>
         {isAdmin && !form && (
-          <div className="row" style={{ gap: '.4rem' }}>
-            <button className="btn secondary" disabled={importing} onClick={importServices}
-              title="Cria as manutenções a partir dos fornecedores, contratos e despesas já registados">
-              {importing ? 'A importar…' : '↻ Importar serviços registados'}
-            </button>
             <button className="btn" onClick={() => { setForm({ ...EMPTY }); setDoneFor(null); setNotice(null); setError(null) }}>+ Nova manutenção</button>
-          </div>
         )}
       </div>
       <p className="hint" style={{ marginTop: 0 }}>
         Manutenções <strong>preventivas</strong> (periódicas: extintores, elevadores, limpeza…) e <strong>corretivas</strong> (reparações) das partes comuns.
+        {' '}Os serviços dos fornecedores (limpeza, elevadores, jardinagem…) e as despesas já pagas entram aqui automaticamente.
         {' '}As avarias reportadas pelos condóminos estão em <em>Ocorrências</em>.
       </p>
       {notice && <div className="msg success">{notice}</div>}
@@ -242,7 +224,7 @@ export default function Maintenance() {
         {!loaded ? <div className="empty">A carregar…</div> : visible.length === 0 ? (
           <div className="empty">
             {tasks.length === 0
-              ? (isAdmin ? 'Ainda não há manutenções registadas. Usa "↻ Importar serviços registados" para as criar a partir dos fornecedores e despesas, ou "+ Nova manutenção" — há modelos prontos para extintores, elevadores e limpeza.' : 'O administrador ainda não registou manutenções.')
+              ? (isAdmin ? 'Ainda não há manutenções. As dos fornecedores de serviços (limpeza, elevadores, jardinagem, extintores…) aparecem aqui sozinhas; podes também usar "+ Nova manutenção", com modelos prontos.' : 'O administrador ainda não registou manutenções.')
               : 'Nenhuma manutenção deste tipo.'}
           </div>
         ) : (

@@ -106,6 +106,11 @@ def on_startup():
 
         # Rubricas das quotas: tipo de quota e descrição; permitir várias quotas
         # extraordinárias no mesmo mês (a regra "uma por mês" passa a valer só para a mensal)
+        conn.execute(text("ALTER TABLE reminder_logs ALTER COLUMN reminder_config_id DROP NOT NULL"))
+        conn.execute(text("ALTER TABLE charge_types ADD COLUMN IF NOT EXISTS frequency VARCHAR DEFAULT 'mensal'"))
+        conn.execute(text("ALTER TABLE charge_types ADD COLUMN IF NOT EXISTS start_month DATE"))
+        conn.execute(text("ALTER TABLE maintenance_tasks ADD COLUMN IF NOT EXISTS source VARCHAR DEFAULT 'manual'"))
+        conn.execute(text("ALTER TABLE maintenance_tasks ADD COLUMN IF NOT EXISTS dismissed BOOLEAN DEFAULT FALSE"))
         conn.execute(text("ALTER TABLE quotas ADD COLUMN IF NOT EXISTS kind VARCHAR NOT NULL DEFAULT 'regular'"))
         conn.execute(text("ALTER TABLE quotas ADD COLUMN IF NOT EXISTS description VARCHAR"))
         conn.execute(text("ALTER TABLE quotas DROP CONSTRAINT IF EXISTS uq_quota_fraction_month"))

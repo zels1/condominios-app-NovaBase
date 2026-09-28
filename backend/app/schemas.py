@@ -289,11 +289,15 @@ class QuotaOut(ORMBase):
 class ChargeTypeCreate(BaseModel):
     name: str = Field(min_length=1)
     category: str = "outra"  # ordinaria | fundo_reserva | extraordinaria | outra
-    method: str = "permilagem"  # orcamento | percentagem | permilagem | igual | fixo
+    method: str = "permilagem"  # orcamento | percentagem | permilagem | igual | fixo | manual
     value: float = Field(0, ge=0)
     recurring: bool = True
+    frequency: str = "mensal"  # mensal | trimestral | semestral | anual (só nas recorrentes)
+    start_month: Optional[date] = None
     active: bool = True
     position: int = 0
+    # cálculo manual: valor de cada fração {fraction_id: €}; vazio/0 = não paga
+    manual_amounts: Optional[dict] = None
 
 
 class ChargeTypeOut(ORMBase):
@@ -303,6 +307,8 @@ class ChargeTypeOut(ORMBase):
     method: str
     value: float
     recurring: bool
+    frequency: Optional[str] = "mensal"
+    start_month: Optional[date] = None
     active: bool
     position: int = 0
 
@@ -322,8 +328,8 @@ class FractionChargeOut(ORMBase):
 class ExtraQuotaCreate(BaseModel):
     charge_type_id: str
     name: Optional[str] = None  # por defeito, o nome da rubrica
-    total_amount: float = Field(gt=0)  # total a repartir (ou valor por fração, se method=fixo)
-    method: str = "permilagem"  # permilagem | igual | fixo
+    total_amount: float = Field(0, ge=0)  # total a repartir (ou valor por fração, se method=fixo; ignorado em manual)
+    method: str = "permilagem"  # permilagem | igual | fixo | manual
     reference_month: date
     due_date: date
     fraction_ids: Optional[List[str]] = None  # vazio = todas as frações
@@ -650,6 +656,7 @@ class MaintenanceTaskOut(ORMBase):
     estimated_cost: Optional[float] = None
     notes: Optional[str] = None
     active: bool
+    source: Optional[str] = "manual"
     created_at: Optional[datetime] = None
 
 

@@ -228,7 +228,8 @@ export default function Occurrences() {
               <div className="row" style={{ alignItems: 'flex-start', gap: '.8rem', flexWrap: 'nowrap', minWidth: 0 }}>
                 {o.photo_url && (
                   <a href={o.photo_url} target="_blank" rel="noreferrer" title="Ver foto em tamanho real" style={{ flexShrink: 0 }}>
-                    <img src={o.photo_url} alt={`Foto: ${o.title}`} style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, display: 'block' }} />
+                    <img src={o.photo_url} alt={`Foto: ${o.title}`} style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, display: 'block' }}
+                      onError={(e) => { e.currentTarget.style.visibility = 'hidden'; e.currentTarget.title = 'Foto indisponível' }} />
                   </a>
                 )}
                 <div style={{ minWidth: 0 }}>

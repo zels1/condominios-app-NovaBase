@@ -218,9 +218,13 @@ class ChargeType(Base):
     #   permilagem  — value € (por mês, ou total se for pontual) repartido por permilagem
     #   igual       — value € repartido em partes iguais pelas frações
     #   fixo        — value € por fração
+    #   manual      — valor definido à mão para cada fração (FractionCharge mode=valor)
     method = Column(String, default="permilagem")
     value = Column(Numeric(12, 2), default=0)
-    recurring = Column(Boolean, default=True)  # entra na quota mensal; senão é lançada à parte
+    recurring = Column(Boolean, default=True)  # entra nas quotas geradas; senão é lançada à parte (única vez)
+    # periodicidade das rubricas recorrentes: mensal | trimestral | semestral | anual
+    frequency = Column(String, default="mensal")
+    start_month = Column(Date, nullable=True)  # 1º mês de cobrança (trimestral/semestral/anual contam a partir daqui)
     active = Column(Boolean, default=True)
     position = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -316,7 +320,7 @@ class ReminderLog(Base):
     __tablename__ = "reminder_logs"
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
     quota_id = Column(UUID(as_uuid=False), ForeignKey("quotas.id"), nullable=False)
-    reminder_config_id = Column(UUID(as_uuid=False), ForeignKey("reminder_configs.id"), nullable=False)
+    reminder_config_id = Column(UUID(as_uuid=False), ForeignKey("reminder_configs.id"), nullable=True)  # nulo se o passo foi apagado
     sent_at = Column(DateTime, default=datetime.utcnow)
     channel = Column(String)
     delivery_status = Column(String, default="queued")  # queued, sent, failed
@@ -434,6 +438,8 @@ class MaintenanceTask(Base):
     estimated_cost = Column(Numeric(10, 2), nullable=True)
     notes = Column(Text)
     active = Column(Boolean, default=True)
+    source = Column(String, default="manual")  # manual | auto (criada a partir dos fornecedores/despesas)
+    dismissed = Column(Boolean, default=False)  # automática apagada pelo admin: não volta a ser criada
     created_at = Column(DateTime, default=datetime.utcnow)
 
     logs = relationship("MaintenanceLog", back_populates="task", cascade="all, delete-orphan")

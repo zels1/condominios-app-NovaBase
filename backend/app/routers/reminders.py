@@ -6,7 +6,7 @@ from typing import List
 
 from .. import models, schemas
 from ..database import get_db
-from ..auth import get_current_user, require_condo_admin
+from ..auth import get_current_user, require_condo_admin, require_condo_member
 from ..services.reminder_engine import run_reminders_for_condominium, mark_reminder_sent
 
 router = APIRouter(prefix="/condominiums/{condominium_id}/reminder-configs", tags=["Lembretes"])
@@ -32,6 +32,7 @@ def create_step(
 
 @router.get("", response_model=List[schemas.ReminderConfigOut])
 def list_steps(condominium_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    require_condo_member(db, user, condominium_id)
     return (
         db.query(models.ReminderConfig)
         .filter(models.ReminderConfig.condominium_id == condominium_id)
@@ -72,6 +73,9 @@ def delete_step(
     ).first()
     if not step:
         raise HTTPException(404, "Configuração não encontrada.")
+    # o histórico de lembretes enviados mantém-se, só deixa de apontar para este passo
+    db.query(models.ReminderLog).filter(models.ReminderLog.reminder_config_id == step.id).update(
+        {models.ReminderLog.reminder_config_id: None}, synchronize_session=False)
     db.delete(step)
     db.commit()
     return {"ok": True}
@@ -108,5 +112,11 @@ def mark_sent(
     db: Session = Depends(get_db),
     user: models.User = Depends(require_condo_admin),
 ):
+    owned = (
+        db.query(models.ReminderLog.id).join(models.Quota).join(models.Fraction)
+        .filter(models.ReminderLog.id == log_id, models.Fraction.condominium_id == condominium_id).first()
+    )
+    if not owned:
+        raise HTTPException(404, "Lembrete não encontrado.")
     entry = mark_reminder_sent(db, log_id, success)
     return {"ok": True, "status": entry.delivery_status}

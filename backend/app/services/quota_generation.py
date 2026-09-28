@@ -28,7 +28,23 @@ CATEGORIES = {
     "extraordinaria": "Quota extraordinária",
     "outra": "Outra",
 }
-METHODS = {"orcamento", "percentagem", "permilagem", "igual", "fixo"}
+METHODS = {"orcamento", "percentagem", "permilagem", "igual", "fixo", "manual"}
+FREQUENCY_MONTHS = {"mensal": 1, "trimestral": 3, "semestral": 6, "anual": 12}
+
+
+def applies_in_month(ct, month_start: date) -> bool:
+    """Uma rubrica recorrente entra na quota deste mês? (mensal: sempre; trimestral: de 3 em
+    3 meses a contar do 1º mês de cobrança; etc.)"""
+    step = FREQUENCY_MONTHS.get(ct.frequency or "mensal", 1)
+    start = ct.start_month.replace(day=1) if ct.start_month else None
+    if start and month_start < start:
+        return False
+    if step == 1:
+        return True
+    if not start:
+        start = date(month_start.year, 1, 1)
+    diff = (month_start.year - start.year) * 12 + (month_start.month - start.month)
+    return diff % step == 0
 
 
 def _round2(value: Decimal) -> Decimal:
@@ -99,7 +115,9 @@ def compute_charge(ct: models.ChargeType, fractions: list, overrides: dict, tota
     normal = [f for f in fractions if f.id not in exempt and f.id not in fixed]
     value = Decimal(str(total if total is not None else (ct.value or 0)))
 
-    if ct.method in ("orcamento", "permilagem"):
+    if ct.method == "manual":
+        amounts = {}  # só pagam as frações com valor definido (mode=valor)
+    elif ct.method in ("orcamento", "permilagem"):
         amounts = _distribute(value, normal, lambda f: f.permilagem)
     elif ct.method == "igual":
         amounts = _distribute(value, normal, lambda f: 1)
@@ -128,9 +146,10 @@ def compute_monthly_lines(db: Session, condominium_id: str, ref_month_start: dat
     if sum(Decimal(str(f.permilagem)) for f in fractions) <= 0:
         raise QuotaGenerationError("A soma das permilagens das frações é zero ou inválida.")
 
-    types = [t for t in ensure_default_charge_types(db, condominium_id) if t.active and t.recurring]
+    types = [t for t in ensure_default_charge_types(db, condominium_id)
+             if t.active and t.recurring and applies_in_month(t, ref_month_start)]
     if not types:
-        raise QuotaGenerationError("Não há rubricas mensais ativas. Ativa pelo menos a quota ordinária em Rubricas.")
+        raise QuotaGenerationError("Não há rubricas ativas a cobrar neste mês. Ativa pelo menos a quota ordinária em Rubricas.")
     overrides = _overrides(db, [t.id for t in types])
 
     budget = None
@@ -151,6 +170,8 @@ def compute_monthly_lines(db: Session, condominium_id: str, ref_month_start: dat
     # primeiro as rubricas de valor direto; as percentagens usam a quota ordinária já calculada
     for ct in sorted(types, key=lambda t: (t.method == "percentagem", t.position or 0)):
         total = Decimal(str(budget.total_amount)) / Decimal("12") if ct.method == "orcamento" else None
+        if ct.method == "orcamento" and (ct.frequency or "mensal") != "mensal":
+            total = total * FREQUENCY_MONTHS.get(ct.frequency, 1)  # ex: trimestral cobra 3 meses de orçamento
         amounts = compute_charge(ct, fractions, overrides, total=total, ordinary_by_fraction=ordinary)
         for fid, amount in amounts.items():
             lines[fid].append((ct, amount))
@@ -271,7 +292,7 @@ def launch_extra_quota(
     fractions = q.order_by(models.Fraction.id).all()
     if not fractions:
         raise QuotaGenerationError("Nenhuma fração selecionada.")
-    if method not in ("permilagem", "igual", "fixo"):
+    if method not in ("permilagem", "igual", "fixo", "manual"):
         raise QuotaGenerationError("Forma de repartição inválida.")
     tmp = models.ChargeType(id=charge_type.id, name=name, category=charge_type.category, method=method, value=total)
     amounts = compute_charge(tmp, fractions, _overrides(db, [charge_type.id]), total=total)

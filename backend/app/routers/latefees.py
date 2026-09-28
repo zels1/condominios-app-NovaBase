@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
-from ..auth import get_current_user, require_condo_admin
+from ..auth import get_current_user, require_condo_admin, require_condo_member
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -17,6 +17,7 @@ router = APIRouter(prefix="/condominiums/{condominium_id}/late-fee-config", tags
 
 @router.get("", response_model=schemas.LateFeeConfigOut)
 def get_config(condominium_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    require_condo_member(db, user, condominium_id)
     config = db.query(models.LateFeeConfig).filter(models.LateFeeConfig.condominium_id == condominium_id).first()
     if not config:
         raise HTTPException(404, "Ainda sem configuração de juros de mora — crie uma com PUT.")

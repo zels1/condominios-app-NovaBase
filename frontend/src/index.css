@@ -380,3 +380,6 @@ tr.clickable-row:hover td { background: var(--primary-soft); }
   .stat-grid .stat .value { font-size: 1.25rem; }
   .modal-backdrop { padding-top: 2vh; }
 }
+.manual-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .5rem .8rem; }
+.manual-cell { display: flex; flex-direction: column; gap: .2rem; font-size: .88rem; }
+.manual-cell input, .small-input { padding: .4em .6em; border: 1px solid var(--border); border-radius: 8px; font: inherit; }

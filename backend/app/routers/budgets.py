@@ -6,7 +6,7 @@ from typing import List
 
 from .. import models, schemas
 from ..database import get_db
-from ..auth import get_current_user, require_condo_admin
+from ..auth import get_current_user, require_condo_admin, require_condo_member
 
 router = APIRouter(prefix="/condominiums/{condominium_id}/budgets", tags=["Orçamentos"])
 
@@ -35,6 +35,7 @@ def list_budgets(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
+    require_condo_member(db, user, condominium_id)
     return (
         db.query(models.Budget)
         .filter(models.Budget.condominium_id == condominium_id)

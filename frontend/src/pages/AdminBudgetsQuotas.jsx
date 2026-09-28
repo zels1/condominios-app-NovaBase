@@ -5,7 +5,7 @@ import { useCondo } from '../lib/CondoContext'
 import { QuotaStatusBadge } from '../components/StatusBadge'
 import { useSort, SortTh } from '../components/SortableTable'
 import { QuotaTitle, linesText } from '../components/QuotaDetail'
-import { ChargeTypesPanel, ExtraQuotaForm, MonthPreview } from './QuotaCharges'
+import { ChargeTypesPanel, MonthPreview } from './QuotaCharges'
 import Modal from '../components/Modal'
 
 const STATUS_ORDER = { overdue: 0, partially_paid: 1, pending: 2, paid: 3, waived: 4 }
@@ -100,8 +100,7 @@ export default function AdminBudgetsQuotas() {
           <p className="subtitle">Rubricas, geração de quotas e cobranças — {selectedCondo.name}</p>
         </div>
         <div className="row" style={{ gap: '.4rem' }}>
-          <button className="btn secondary" onClick={() => { setTab('charges'); setNewChargeSignal((n) => n + 1) }}>+ Nova rubrica</button>
-          <button className="btn secondary" onClick={() => setModal('extra')}>+ Quota extraordinária</button>
+          <button className="btn secondary" onClick={() => { setTab('charges'); setNewChargeSignal((n) => n + 1) }}>+ Nova quota</button>
           <button className="btn" onClick={() => setModal('generate')}>⚡ Gerar quotas</button>
         </div>
       </div>
@@ -128,11 +127,14 @@ export default function AdminBudgetsQuotas() {
 
       <div className="tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'quotas'} className={tab === 'quotas' ? 'active' : ''} onClick={() => setTab('quotas')}>Quotas emitidas</button>
-        <button role="tab" aria-selected={tab === 'charges'} className={tab === 'charges' ? 'active' : ''} onClick={() => setTab('charges')}>Rubricas</button>
+        <button role="tab" aria-selected={tab === 'charges'} className={tab === 'charges' ? 'active' : ''} onClick={() => setTab('charges')}>Quotas e rubricas</button>
         <button role="tab" aria-selected={tab === 'budgets'} className={tab === 'budgets' ? 'active' : ''} onClick={() => setTab('budgets')}>Orçamentos anuais</button>
       </div>
 
-      {tab === 'charges' && <ChargeTypesPanel condoId={selectedCondo.id} fractions={fractions} newSignal={newChargeSignal} />}
+      {tab === 'charges' && (
+        <ChargeTypesPanel condoId={selectedCondo.id} fractions={fractions} newSignal={newChargeSignal}
+          onLaunched={async (text) => { setNotice({ type: 'success', text }); setTab('quotas'); setFKind(''); await loadQuotas() }} />
+      )}
 
       {tab === 'budgets' && (
         <div className="card">
@@ -230,12 +232,6 @@ export default function AdminBudgetsQuotas() {
             onDone={async (text, month) => { setModal(null); setNotice({ type: 'success', text }); setTab('quotas'); await loadQuotas(); setFMonth(month) }} />
         </Modal>
       )}
-      {modal === 'extra' && (
-        <Modal title="Lançar quota extraordinária" wide onClose={() => setModal(null)}>
-          <ExtraQuotaForm condoId={selectedCondo.id} fractions={fractions} onCancel={() => setModal(null)}
-            onCreated={async (text) => { setModal(null); setNotice({ type: 'success', text }); setTab('quotas'); setFKind(''); await loadQuotas() }} />
-        </Modal>
-      )}
       {modal === 'budget' && (
         <Modal title="Novo orçamento anual" onClose={() => setModal(null)}>
           <BudgetForm condoId={selectedCondo.id} onCancel={() => setModal(null)}
@@ -269,7 +265,7 @@ function GenerateForm({ condoId, onCancel, onDone }) {
 
   return (
     <div className="stack">
-      <p className="hint" style={{ margin: 0 }}>Cria a quota mensal de cada fração com as rubricas mensais ativas (separador Rubricas). Confere a pré-visualização antes de gerar.</p>
+      <p className="hint" style={{ margin: 0 }}>Cria a quota do mês de cada fração com as quotas e rubricas recorrentes que se aplicam a esse mês (separador Quotas e rubricas). Confere a pré-visualização antes de gerar.</p>
       <div className="row form-row">
         <div className="field" style={{ width: 180 }}>
           <label htmlFor="gen-month">Mês de referência</label>

@@ -2,8 +2,9 @@ import { Fragment, useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import Modal from '../components/Modal'
 
-// Rubricas das quotas: quota ordinária, fundo comum de reserva, quotas extraordinárias e
-// outras rubricas configuráveis — para todas as frações e, se preciso, fração a fração.
+// Quotas / rubricas de cobrança: quota ordinária, fundo comum de reserva, quotas
+// extraordinárias e outras — com frequência (única vez, mensal, trimestral, semestral,
+// anual) e forma de cálculo (permilagem, partes iguais, valor fixo, manual por condómino…).
 
 export const CATEGORY_LABELS = {
   ordinaria: 'Quota ordinária',
@@ -11,35 +12,268 @@ export const CATEGORY_LABELS = {
   extraordinaria: 'Quota extraordinária',
   outra: 'Outra',
 }
-const METHOD_LABELS = {
-  orcamento: 'Orçamento anual ÷ 12, por permilagem',
-  percentagem: '% da quota ordinária',
-  permilagem: 'Valor repartido por permilagem',
-  igual: 'Valor repartido em partes iguais',
-  fixo: 'Valor fixo por fração',
+export const FREQUENCY_LABELS = {
+  unica: 'Única vez',
+  mensal: 'Mensal',
+  trimestral: 'Trimestral',
+  semestral: 'Semestral',
+  anual: 'Anual',
 }
-const EMPTY = { name: '', category: 'outra', method: 'permilagem', value: '', recurring: true, active: true }
+const PERIOD_WORD = { mensal: 'mês', trimestral: 'trimestre', semestral: 'semestre', anual: 'ano', unica: 'vez' }
+const METHOD_LABELS = {
+  permilagem: 'Por permilagem (valor total repartido)',
+  igual: 'Por fração, em partes iguais',
+  fixo: 'Valor fixo por fração',
+  manual: 'Manual — valor definido para cada condómino',
+  percentagem: '% da quota ordinária',
+  orcamento: 'Orçamento anual (÷ 12, por permilagem)',
+}
 
 function money(v) { return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(v || 0) }
 function num(v) { const n = parseFloat(String(v ?? '').replace(',', '.')); return Number.isNaN(n) ? null : n }
+function thisMonth() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
+
+export function frequencyOf(ct) { return ct.recurring ? (ct.frequency || 'mensal') : 'unica' }
 
 export function describeCharge(ct) {
   const v = Number(ct.value || 0)
+  const per = ct.recurring ? `/${PERIOD_WORD[ct.frequency || 'mensal']}` : ''
   switch (ct.method) {
     case 'orcamento': return 'Orçamento anual ÷ 12, repartido por permilagem'
     case 'percentagem': return `${v.toLocaleString('pt-PT')}% da quota ordinária de cada fração`
-    case 'permilagem': return `${money(v)}${ct.recurring ? '/mês' : ''} repartidos por permilagem`
-    case 'igual': return `${money(v)}${ct.recurring ? '/mês' : ''} repartidos em partes iguais`
-    case 'fixo': return `${money(v)}${ct.recurring ? '/mês' : ''} por fração`
+    case 'permilagem': return `${money(v)}${per} repartidos por permilagem`
+    case 'igual': return `${money(v)}${per} repartidos em partes iguais`
+    case 'fixo': return `${money(v)}${per} por fração`
+    case 'manual': return `Valor definido para cada condómino${per}`
     default: return ct.method
   }
 }
 
-export function ChargeTypesPanel({ condoId, fractions, newSignal = 0 }) {
+// Formulário único para criar ou editar uma quota/rubrica. Se for "Única vez", é lançada logo.
+export function QuotaRuleForm({ condoId, fractions, rule, overrides = [], onCancel, onSaved }) {
+  const base = `/condominiums/${condoId}/charge-types`
+  const editing = !!rule?.id
+  const [form, setForm] = useState(() => ({
+    name: rule?.name || '',
+    category: rule?.category || 'outra',
+    frequency: rule ? frequencyOf(rule) : 'mensal',
+    method: rule?.method || 'permilagem',
+    value: rule?.value != null && rule?.method !== 'manual' ? String(rule.value) : '',
+    start_month: rule?.start_month ? rule.start_month.slice(0, 7) : thisMonth(),
+    active: rule?.active ?? true,
+    // única vez
+    launch: !editing,
+    month: thisMonth(),
+    due_date: '',
+    all: true,
+    fraction_ids: [],
+  }))
+  const [manual, setManual] = useState(() => {
+    const m = {}
+    overrides.filter((o) => o.mode === 'valor').forEach((o) => { m[o.fraction_id] = String(o.amount ?? '') })
+    return m
+  })
+  const [fillAll, setFillAll] = useState('')
+  const [err, setErr] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  const once = form.frequency === 'unica'
+  const methods = Object.keys(METHOD_LABELS).filter((k) => {
+    if (once && (k === 'percentagem' || k === 'orcamento')) return false
+    if (k === 'orcamento' && form.category !== 'ordinaria' && form.method !== 'orcamento') return false
+    return true
+  })
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
+  const manualTotal = fractions.reduce((t, f) => t + (num(manual[f.id]) || 0), 0)
+  const period = PERIOD_WORD[form.frequency]
+
+  async function submit(e) {
+    e.preventDefault()
+    setErr(null)
+    if (form.method === 'manual' && manualTotal <= 0) { setErr('Indica o valor de pelo menos um condómino.'); return }
+    if (once && form.launch && !form.all && form.fraction_ids.length === 0) { setErr('Escolhe pelo menos uma fração.'); return }
+    const body = {
+      name: form.name.trim(),
+      category: form.category,
+      method: form.method,
+      value: form.method === 'manual' || form.method === 'orcamento' ? 0 : (num(form.value) ?? 0),
+      recurring: !once,
+      frequency: once ? 'mensal' : form.frequency,
+      start_month: !once && form.frequency !== 'mensal' ? `${form.start_month}-01` : null,
+      active: form.active,
+      manual_amounts: form.method === 'manual'
+        ? Object.fromEntries(fractions.map((f) => [f.id, num(manual[f.id]) || 0]))
+        : undefined,
+    }
+    setBusy(true)
+    try {
+      const ct = editing ? await api.put(`${base}/${rule.id}`, body) : await api.post(base, body)
+      let text = editing ? `"${body.name}" atualizada.` : `"${body.name}" criada.`
+      let launched = false
+      if (once && form.launch) {
+        const r = await api.post(`${base}/extra-quota`, {
+          charge_type_id: ct.id, name: body.name, total_amount: body.value || 0,
+          method: form.method, reference_month: `${form.month}-01`, due_date: form.due_date,
+          fraction_ids: form.all ? null : form.fraction_ids,
+        })
+        text = `"${body.name}": ${r.created} quota(s) lançada(s), no total de ${money(r.total)}.`
+        launched = true
+      } else if (!once) {
+        text += ` Entra nas quotas geradas ${form.frequency === 'mensal' ? 'todos os meses' : `de ${form.frequency === 'trimestral' ? '3 em 3' : form.frequency === 'semestral' ? '6 em 6' : '12 em 12'} meses`}.`
+      }
+      await onSaved(text, launched)
+    } catch (e2) { setErr(e2.message); setBusy(false) }
+  }
+
+  return (
+    <form onSubmit={submit} className="stack">
+      {err && <div className="msg error">{err}</div>}
+      <div className="row form-row">
+        <div className="field" style={{ flex: 2, minWidth: 200 }}>
+          <label htmlFor="qr-name">Nome *</label>
+          <input id="qr-name" value={form.name} onChange={set('name')} required placeholder="Ex: Quota extraordinária — obras, Seguro, Elevador" />
+        </div>
+        <div className="field" style={{ flex: 1, minWidth: 170 }}>
+          <label htmlFor="qr-cat">Tipo</label>
+          <select id="qr-cat" value={form.category} onChange={(e) => {
+            const category = e.target.value
+            setForm({
+              ...form, category,
+              frequency: category === 'extraordinaria' && !editing ? 'unica' : form.frequency,
+              method: category === 'fundo_reserva' ? 'percentagem' : (form.method === 'orcamento' && category !== 'ordinaria' ? 'permilagem' : form.method),
+              value: category === 'fundo_reserva' && !form.value ? '10' : form.value,
+            })
+          }}>
+            {Object.entries(CATEGORY_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="row form-row">
+        <div className="field" style={{ flex: 1, minWidth: 160 }}>
+          <label htmlFor="qr-freq">Frequência</label>
+          <select id="qr-freq" value={form.frequency} onChange={(e) => {
+            const frequency = e.target.value
+            setForm({ ...form, frequency, method: frequency === 'unica' && ['percentagem', 'orcamento'].includes(form.method) ? 'permilagem' : form.method })
+          }}>
+            {Object.entries(FREQUENCY_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        </div>
+        <div className="field" style={{ flex: 2, minWidth: 220 }}>
+          <label htmlFor="qr-method">Cálculo</label>
+          <select id="qr-method" value={form.method} onChange={set('method')}>
+            {methods.map((k) => <option key={k} value={k}>{METHOD_LABELS[k]}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {['permilagem', 'igual', 'fixo', 'percentagem'].includes(form.method) && (
+        <div className="row form-row">
+          <div className="field" style={{ flex: 1, minWidth: 180 }}>
+            <label htmlFor="qr-value">
+              {form.method === 'percentagem' ? 'Percentagem (%)'
+                : form.method === 'fixo' ? `Valor por fração (€) por ${period}`
+                  : `Valor total a repartir (€) por ${period}`}
+            </label>
+            <input id="qr-value" type="number" min="0" step="0.01" value={form.value} onChange={set('value')} required />
+          </div>
+          <p className="hint" style={{ flex: 2, minWidth: 200, margin: '1.6rem 0 0' }}>
+            {form.method === 'permilagem' && 'Cada fração paga a sua parte de acordo com a permilagem.'}
+            {form.method === 'igual' && `Dividido pelas ${fractions.length} frações em partes iguais.`}
+            {form.method === 'fixo' && 'Todas as frações pagam este valor.'}
+            {form.method === 'percentagem' && 'Calculado sobre a quota ordinária de cada fração (ex: fundo comum de reserva, mínimo 10%).'}
+          </p>
+        </div>
+      )}
+      {form.method === 'orcamento' && <p className="hint" style={{ margin: 0 }}>Usa o orçamento anual do ano (separador Orçamentos): total ÷ 12, repartido por permilagem.</p>}
+
+      {form.method === 'manual' && (
+        <div className="stack" style={{ gap: '.2rem' }}>
+          <div className="row between" style={{ alignItems: 'flex-end' }}>
+            <strong style={{ fontSize: '.9rem' }}>Valor de cada condómino (€ por {period})</strong>
+            <div className="row" style={{ gap: '.3rem', alignItems: 'center' }}>
+              <input type="number" min="0" step="0.01" placeholder="Valor" value={fillAll} onChange={(e) => setFillAll(e.target.value)} style={{ width: 100 }} aria-label="Valor para todas as frações" className="small-input" />
+              <button type="button" className="btn secondary small" onClick={() => setManual(Object.fromEntries(fractions.map((f) => [f.id, fillAll])))}>Aplicar a todas</button>
+            </div>
+          </div>
+          <span className="hint">Deixa vazio (ou 0) nas frações que não pagam.</span>
+          <div className="manual-grid">
+            {fractions.map((f) => (
+              <label key={f.id} className="manual-cell">
+                <span><strong>{f.identifier}</strong> <span className="hint">{Number(f.permilagem).toLocaleString('pt-PT')}‰</span></span>
+                <input type="number" min="0" step="0.01" value={manual[f.id] ?? ''} placeholder="0,00"
+                  onChange={(e) => setManual({ ...manual, [f.id]: e.target.value })} aria-label={`Valor da fração ${f.identifier}`} />
+              </label>
+            ))}
+          </div>
+          <span className="hint">Total por {period}: <strong>{money(manualTotal)}</strong></span>
+        </div>
+      )}
+
+      {!once && form.frequency !== 'mensal' && (
+        <div className="field" style={{ maxWidth: 220 }}>
+          <label htmlFor="qr-start">Primeiro mês de cobrança</label>
+          <input id="qr-start" type="month" value={form.start_month} onChange={set('start_month')} required />
+          <span className="hint">Depois repete de {form.frequency === 'trimestral' ? '3 em 3' : form.frequency === 'semestral' ? '6 em 6' : '12 em 12'} meses.</span>
+        </div>
+      )}
+
+      {once && (
+        <div className="stack assign-box" style={{ maxWidth: 'none', gap: '.4rem' }}>
+          {editing && (
+            <label className="remember" style={{ margin: 0 }}>
+              <input type="checkbox" checked={form.launch} onChange={set('launch')} /> Lançar esta quota agora
+            </label>
+          )}
+          {form.launch && (<>
+            <div className="row form-row">
+              <div className="field" style={{ flex: 1, minWidth: 150 }}>
+                <label htmlFor="qr-month">Mês de referência</label>
+                <input id="qr-month" type="month" value={form.month} onChange={set('month')} required />
+              </div>
+              <div className="field" style={{ flex: 1, minWidth: 150 }}>
+                <label htmlFor="qr-due">Vencimento</label>
+                <input id="qr-due" type="date" value={form.due_date} onChange={set('due_date')} required />
+              </div>
+            </div>
+            <label className="remember" style={{ margin: 0 }}>
+              <input type="checkbox" checked={form.all} onChange={set('all')} /> Todas as frações
+            </label>
+            {!form.all && (
+              <div className="row" style={{ gap: '.3rem .9rem' }}>
+                {fractions.map((f) => (
+                  <label key={f.id} className="remember" style={{ margin: 0 }}>
+                    <input type="checkbox" checked={form.fraction_ids.includes(f.id)}
+                      onChange={(e) => setForm({ ...form, fraction_ids: e.target.checked ? [...form.fraction_ids, f.id] : form.fraction_ids.filter((x) => x !== f.id) })} />
+                    {f.identifier}
+                  </label>
+                ))}
+              </div>
+            )}
+          </>)}
+        </div>
+      )}
+      {!once && <p className="hint" style={{ margin: 0 }}>Entra automaticamente nas quotas geradas ({FREQUENCY_LABELS[form.frequency].toLowerCase()}) e aparece discriminada no aviso e no recibo.</p>}
+
+      {editing && (
+        <label className="remember" style={{ margin: 0 }}>
+          <input type="checkbox" checked={form.active} onChange={set('active')} /> Ativa
+        </label>
+      )}
+      <div className="modal-actions">
+        <button type="button" className="btn secondary small" onClick={onCancel}>Cancelar</button>
+        <button className="btn small" disabled={busy}>
+          {busy ? 'A guardar…' : once && form.launch ? (editing ? 'Guardar e lançar' : 'Criar e lançar') : (editing ? 'Guardar' : 'Criar')}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+export function ChargeTypesPanel({ condoId, fractions, newSignal = 0, onLaunched }) {
   const base = `/condominiums/${condoId}/charge-types`
   const [types, setTypes] = useState(null)
   const [overrides, setOverrides] = useState([])
-  const [form, setForm] = useState(null)
+  const [editing, setEditing] = useState(null) // null | {} (nova) | rubrica
   const [openFor, setOpenFor] = useState(null)
   const [msg, setMsg] = useState(null)
   const [err, setErr] = useState(null)
@@ -49,24 +283,10 @@ export function ChargeTypesPanel({ condoId, fractions, newSignal = 0 }) {
     setTypes(t); setOverrides(o)
   }
   useEffect(() => { load().catch((e) => setErr(e.message)) }, [condoId])
-  useEffect(() => { if (newSignal) { setForm({ ...EMPTY }); setMsg(null); setErr(null) } }, [newSignal])
-
-  async function save(e) {
-    e.preventDefault()
-    setErr(null); setMsg(null)
-    const body = { ...form, name: form.name.trim(), value: num(form.value) ?? 0 }
-    delete body.id
-    try {
-      if (form.id) await api.put(`${base}/${form.id}`, body)
-      else await api.post(base, body)
-      setMsg(form.id ? `Rubrica "${body.name}" atualizada.` : `Rubrica "${body.name}" criada.`)
-      setForm(null)
-      await load()
-    } catch (e2) { setErr(e2.message) }
-  }
+  useEffect(() => { if (newSignal) { setEditing({}); setMsg(null); setErr(null) } }, [newSignal])
 
   async function remove(ct) {
-    if (!window.confirm(`Apagar a rubrica "${ct.name}"? Se já tiver sido usada em quotas, fica apenas desativada.`)) return
+    if (!window.confirm(`Apagar "${ct.name}"? Se já tiver sido usada em quotas, fica apenas desativada.`)) return
     setErr(null); setMsg(null)
     try {
       const r = await api.del(`${base}/${ct.id}`)
@@ -76,121 +296,71 @@ export function ChargeTypesPanel({ condoId, fractions, newSignal = 0 }) {
   }
 
   if (!types) return err ? <div className="msg error">{err}</div> : <div className="empty">A carregar…</div>
-  const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
   const countFor = (ctId) => overrides.filter((o) => o.charge_type_id === ctId).length
 
   return (
-    <div className="stack">
-      <div className="card">
-        <div className="row between" style={{ alignItems: 'center', gap: '.6rem' }}>
-          <h3 style={{ margin: 0 }}>Rubricas da quota</h3>
-          <button className="btn secondary small" onClick={() => { setForm({ ...EMPTY }); setMsg(null); setErr(null) }}>+ Nova rubrica</button>
-        </div>
-        <p className="hint">
-          As rubricas <strong>mensais</strong> entram na quota de cada mês e aparecem discriminadas no aviso e no recibo.
-          As <strong>pontuais</strong> (ex: quota extraordinária para obras) lançam-se à parte, no separador Quotas.
-          Em cada rubrica podes isentar frações ou dar-lhes um valor próprio.
-        </p>
-        {msg && <div className="msg success" style={{ marginBottom: '.6rem' }}>{msg}</div>}
-        {err && <div className="msg error" style={{ marginBottom: '.6rem' }}>{err}</div>}
-
-        {form && (
-          <Modal title={form.id ? `Editar rubrica — ${form.name}` : 'Nova rubrica'} onClose={() => setForm(null)}>
-          <form onSubmit={save} className="stack">
-            {err && <div className="msg error">{err}</div>}
-            <div className="row form-row">
-              <div className="field" style={{ flex: 2, minWidth: 200 }}>
-                <label htmlFor="ct-name">Nome *</label>
-                <input id="ct-name" value={form.name} onChange={set('name')} required placeholder="Ex: Seguro do edifício, Elevador, Obras na cobertura" />
-              </div>
-              <div className="field" style={{ flex: 1, minWidth: 180 }}>
-                <label htmlFor="ct-cat">Tipo</label>
-                <select id="ct-cat" value={form.category} onChange={(e) => {
-                  const category = e.target.value
-                  setForm({
-                    ...form, category,
-                    recurring: category === 'extraordinaria' ? false : form.recurring,
-                    method: category === 'fundo_reserva' ? 'percentagem' : (form.method === 'orcamento' && category !== 'ordinaria' ? 'permilagem' : form.method),
-                  })
-                }}>
-                  {Object.entries(CATEGORY_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="row form-row">
-              <div className="field" style={{ flex: 2, minWidth: 220 }}>
-                <label htmlFor="ct-method">Cálculo</label>
-                <select id="ct-method" value={form.method} onChange={set('method')}>
-                  {Object.entries(METHOD_LABELS)
-                    .filter(([k]) => form.recurring || k !== 'orcamento')
-                    .map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                </select>
-              </div>
-              {form.method !== 'orcamento' && (
-                <div className="field" style={{ flex: 1, minWidth: 150 }}>
-                  <label htmlFor="ct-value">{form.method === 'percentagem' ? 'Percentagem (%)' : form.recurring ? 'Valor mensal (€)' : 'Valor por defeito (€)'}</label>
-                  <input id="ct-value" type="number" min="0" step="0.01" value={form.value} onChange={set('value')} required={form.recurring} />
-                </div>
-              )}
-              <div className="field" style={{ flex: 1, minWidth: 170 }}>
-                <label htmlFor="ct-rec">Cobrança</label>
-                <select id="ct-rec" value={form.recurring ? 'mensal' : 'pontual'} onChange={(e) => setForm({ ...form, recurring: e.target.value === 'mensal', method: e.target.value !== 'mensal' && form.method === 'orcamento' ? 'permilagem' : form.method })}>
-                  <option value="mensal">Mensal (na quota do mês)</option>
-                  <option value="pontual">Pontual (lançada à parte)</option>
-                </select>
-              </div>
-            </div>
-            {form.id && (
-              <label className="remember" style={{ margin: 0 }}>
-                <input type="checkbox" checked={form.active} onChange={set('active')} /> Ativa
-              </label>
-            )}
-            <div className="modal-actions">
-              <button type="button" className="btn secondary small" onClick={() => setForm(null)}>Cancelar</button>
-              <button className="btn small">{form.id ? 'Guardar' : 'Criar rubrica'}</button>
-            </div>
-          </form>
-          </Modal>
-        )}
-
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Rubrica</th><th>Cálculo</th><th>Cobrança</th><th>Frações com configuração própria</th><th /></tr></thead>
-            <tbody>
-              {types.map((ct) => (
-                <Fragment key={ct.id}>
-                  <tr style={ct.active ? undefined : { opacity: .55 }}>
-                    <td>
-                      <strong>{ct.name}</strong>
-                      {(CATEGORY_LABELS[ct.category] !== ct.name || !ct.active) && (
-                        <div className="hint" style={{ fontSize: '.78rem' }}>{[CATEGORY_LABELS[ct.category] !== ct.name && (CATEGORY_LABELS[ct.category] || ct.category), !ct.active && 'desativada'].filter(Boolean).join(' · ')}</div>
-                      )}
-                    </td>
-                    <td>{describeCharge(ct)}</td>
-                    <td>{ct.recurring ? <span className="badge ok">Mensal</span> : <span className="badge warn">Pontual</span>}</td>
-                    <td>
-                      <button type="button" className="link-button small" onClick={() => setOpenFor(openFor === ct.id ? null : ct.id)} aria-expanded={openFor === ct.id}>
-                        {countFor(ct.id) ? `${countFor(ct.id)} fração(ões)` : 'Todas iguais'} · configurar por fração
-                      </button>
-                    </td>
-                    <td>
-                      <div className="row" style={{ gap: '.3rem', flexWrap: 'nowrap', justifyContent: 'flex-end' }}>
-                        <button className="btn secondary small" onClick={() => { setForm({ ...ct, value: String(ct.value ?? '') }); setMsg(null); setErr(null) }}>Editar</button>
-                        <button className="btn secondary small" onClick={() => remove(ct)}>Apagar</button>
-                      </div>
-                    </td>
-                  </tr>
-                  {openFor === ct.id && (
-                    <tr><td colSpan={5} style={{ background: 'var(--bg)' }}>
-                      <FractionOverrides base={base} ct={ct} fractions={fractions} overrides={overrides.filter((o) => o.charge_type_id === ct.id)} onChanged={load} />
-                    </td></tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
+    <div className="card">
+      <div className="row between" style={{ alignItems: 'center', gap: '.6rem' }}>
+        <h3 style={{ margin: 0 }}>Quotas e rubricas</h3>
+        <button className="btn secondary small" onClick={() => { setEditing({}); setMsg(null); setErr(null) }}>+ Nova quota</button>
       </div>
+      <p className="hint">
+        As recorrentes (mensal, trimestral, semestral, anual) entram nas quotas geradas e aparecem discriminadas no aviso e no recibo.
+        As de <strong>única vez</strong> (ex: quota extraordinária para obras) são lançadas logo ao criar.
+        Em cada uma podes isentar frações ou dar-lhes um valor próprio.
+      </p>
+      {msg && <div className="msg success" style={{ marginBottom: '.6rem' }}>{msg}</div>}
+      {err && <div className="msg error" style={{ marginBottom: '.6rem' }}>{err}</div>}
+
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Quota / rubrica</th><th>Cálculo</th><th>Frequência</th><th>Por fração</th><th /></tr></thead>
+          <tbody>
+            {types.map((ct) => (
+              <Fragment key={ct.id}>
+                <tr style={ct.active ? undefined : { opacity: .55 }}>
+                  <td>
+                    <strong>{ct.name}</strong>
+                    {(CATEGORY_LABELS[ct.category] !== ct.name || !ct.active) && (
+                      <div className="hint" style={{ fontSize: '.78rem' }}>{[CATEGORY_LABELS[ct.category] !== ct.name && (CATEGORY_LABELS[ct.category] || ct.category), !ct.active && 'desativada'].filter(Boolean).join(' · ')}</div>
+                    )}
+                  </td>
+                  <td>{describeCharge(ct)}</td>
+                  <td><span className={`badge ${ct.recurring ? 'ok' : 'warn'}`}>{FREQUENCY_LABELS[frequencyOf(ct)]}</span></td>
+                  <td>
+                    <button type="button" className="link-button small" onClick={() => setOpenFor(openFor === ct.id ? null : ct.id)} aria-expanded={openFor === ct.id}>
+                      {ct.method === 'manual' ? `${countFor(ct.id)} com valor` : countFor(ct.id) ? `${countFor(ct.id)} com configuração própria` : 'Todas iguais'} · ver
+                    </button>
+                  </td>
+                  <td>
+                    <div className="row" style={{ gap: '.3rem', flexWrap: 'nowrap', justifyContent: 'flex-end' }}>
+                      <button className="btn secondary small" onClick={() => { setEditing(ct); setMsg(null); setErr(null) }}>Editar</button>
+                      <button className="btn secondary small" onClick={() => remove(ct)}>Apagar</button>
+                    </div>
+                  </td>
+                </tr>
+                {openFor === ct.id && (
+                  <tr><td colSpan={5} style={{ background: 'var(--bg)' }}>
+                    <FractionOverrides base={base} ct={ct} fractions={fractions} overrides={overrides.filter((o) => o.charge_type_id === ct.id)} onChanged={load} />
+                  </td></tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {editing && (
+        <Modal title={editing.id ? `Editar — ${editing.name}` : 'Nova quota'} wide onClose={() => setEditing(null)}>
+          <QuotaRuleForm condoId={condoId} fractions={fractions} rule={editing.id ? editing : null}
+            overrides={editing.id ? overrides.filter((o) => o.charge_type_id === editing.id) : []}
+            onCancel={() => setEditing(null)}
+            onSaved={async (text, launched) => {
+              setEditing(null); setMsg(text); await load()
+              if (launched && onLaunched) await onLaunched(text)
+            }} />
+        </Modal>
+      )}
     </div>
   )
 }
@@ -283,105 +453,3 @@ export function MonthPreview({ condoId, month }) {
   )
 }
 
-export function ExtraQuotaForm({ condoId, fractions, onCreated, onCancel }) {
-  const base = `/condominiums/${condoId}/charge-types`
-  const [types, setTypes] = useState([])
-  const now = new Date()
-  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const [form, setForm] = useState({ charge_type_id: '', name: '', total_amount: '', method: 'permilagem', month, due_date: '', all: true, fraction_ids: [] })
-  const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState(null)
-
-  useEffect(() => {
-    api.get(base).then((t) => {
-      const list = t.filter((x) => x.active)
-      setTypes(list)
-      const def = list.find((x) => x.category === 'extraordinaria') || list.find((x) => !x.recurring)
-      if (def) setForm((f) => ({ ...f, charge_type_id: def.id, method: ['permilagem', 'igual', 'fixo'].includes(def.method) ? def.method : 'permilagem', total_amount: def.value ? String(def.value) : '' }))
-    }).catch(() => {})
-  }, [condoId])
-
-  async function submit(e) {
-    e.preventDefault()
-    setMsg(null)
-    const selected = form.all ? null : form.fraction_ids
-    if (selected && selected.length === 0) { setMsg({ type: 'error', text: 'Escolhe pelo menos uma fração.' }); return }
-    const ct = types.find((t) => t.id === form.charge_type_id)
-    const label = form.name.trim() || ct?.name
-    if (!window.confirm(`Lançar "${label}" (${form.method === 'fixo' ? `${money(num(form.total_amount))} por fração` : `total ${money(num(form.total_amount))}`}) para ${selected ? selected.length : 'todas as'} fração(ões)?`)) return
-    setBusy(true)
-    try {
-      const r = await api.post(`${base}/extra-quota`, {
-        charge_type_id: form.charge_type_id, name: form.name.trim() || undefined,
-        total_amount: num(form.total_amount), method: form.method,
-        reference_month: `${form.month}-01`, due_date: form.due_date, fraction_ids: selected,
-      })
-      await onCreated(`"${label}": ${r.created} quota(s) lançada(s), no total de ${money(r.total)}.`)
-      return
-    } catch (e2) { setMsg({ type: 'error', text: e2.message }) }
-    setBusy(false)
-  }
-
-  const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
-  return (
-    <div>
-      <p className="hint" style={{ marginTop: 0 }}>Para obras, reforço do fundo de reserva ou outra despesa aprovada: fica uma quota à parte para cada fração, respeitando as isenções e valores próprios configurados na rubrica.</p>
-      <form onSubmit={submit} className="stack">
-        <div className="row form-row">
-          <div className="field" style={{ flex: 1, minWidth: 180 }}>
-            <label htmlFor="xq-type">Rubrica</label>
-            <select id="xq-type" value={form.charge_type_id} onChange={set('charge_type_id')} required>
-              <option value="">Selecionar…</option>
-              {types.map((t) => <option key={t.id} value={t.id}>{t.name}{t.recurring ? ' (mensal)' : ''}</option>)}
-            </select>
-          </div>
-          <div className="field" style={{ flex: 2, minWidth: 200 }}>
-            <label htmlFor="xq-name">Descrição (aparece no aviso e no recibo)</label>
-            <input id="xq-name" value={form.name} onChange={set('name')} placeholder="Ex: Obras na cobertura — 1ª prestação" />
-          </div>
-        </div>
-        <div className="row form-row">
-          <div className="field" style={{ flex: 1, minWidth: 180 }}>
-            <label htmlFor="xq-method">Repartição</label>
-            <select id="xq-method" value={form.method} onChange={set('method')}>
-              <option value="permilagem">Total repartido por permilagem</option>
-              <option value="igual">Total repartido em partes iguais</option>
-              <option value="fixo">Valor fixo por fração</option>
-            </select>
-          </div>
-          <div className="field" style={{ flex: 1, minWidth: 140 }}>
-            <label htmlFor="xq-total">{form.method === 'fixo' ? 'Valor por fração (€)' : 'Valor total (€)'}</label>
-            <input id="xq-total" type="number" min="0.01" step="0.01" value={form.total_amount} onChange={set('total_amount')} required />
-          </div>
-          <div className="field" style={{ flex: 1, minWidth: 140 }}>
-            <label htmlFor="xq-month">Mês de referência</label>
-            <input id="xq-month" type="month" value={form.month} onChange={set('month')} required />
-          </div>
-          <div className="field" style={{ flex: 1, minWidth: 150 }}>
-            <label htmlFor="xq-due">Vencimento</label>
-            <input id="xq-due" type="date" value={form.due_date} onChange={set('due_date')} required />
-          </div>
-        </div>
-        <label className="remember" style={{ margin: 0 }}>
-          <input type="checkbox" checked={form.all} onChange={set('all')} /> Todas as frações
-        </label>
-        {!form.all && (
-          <div className="row" style={{ gap: '.3rem .9rem' }}>
-            {fractions.map((f) => (
-              <label key={f.id} className="remember" style={{ margin: 0 }}>
-                <input type="checkbox" checked={form.fraction_ids.includes(f.id)}
-                  onChange={(e) => setForm({ ...form, fraction_ids: e.target.checked ? [...form.fraction_ids, f.id] : form.fraction_ids.filter((x) => x !== f.id) })} />
-                {f.identifier}
-              </label>
-            ))}
-          </div>
-        )}
-        {msg && <div className={`msg ${msg.type}`}>{msg.text}</div>}
-        <div className="modal-actions">
-          <button type="button" className="btn secondary small" onClick={onCancel}>Cancelar</button>
-          <button className="btn small" disabled={busy}>{busy ? 'A lançar…' : 'Lançar quota'}</button>
-        </div>
-      </form>
-    </div>
-  )
-}

@@ -103,9 +103,16 @@ def options(condominium_id: str):
 @router.get("", response_model=List[schemas.MaintenanceTaskOut])
 def list_tasks(condominium_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     require_condo_member(db, user, condominium_id)
+    # a manutenção acompanha sozinha os serviços registados (fornecedores, contratos, despesas)
+    try:
+        sync_services(db, condominium_id, None)
+        db.commit()
+    except Exception:  # noqa: BLE001 — a sincronização nunca pode impedir de ver a lista
+        db.rollback()
     tasks = (
         db.query(models.MaintenanceTask)
-        .filter(models.MaintenanceTask.condominium_id == condominium_id)
+        .filter(models.MaintenanceTask.condominium_id == condominium_id,
+                (models.MaintenanceTask.dismissed == False) | (models.MaintenanceTask.dismissed == None))  # noqa: E711,E712
         .order_by(models.MaintenanceTask.next_due.is_(None), models.MaintenanceTask.next_due, models.MaintenanceTask.title)
         .all()
     )
@@ -140,7 +147,12 @@ def update_task(condominium_id: str, task_id: str, payload: schemas.MaintenanceT
 @router.delete("/{task_id}")
 def delete_task(condominium_id: str, task_id: str, db: Session = Depends(get_db), user: models.User = Depends(require_condo_admin)):
     task = _get_task(db, condominium_id, task_id)
-    db.delete(task)  # os registos (logs) vão com ela; as despesas criadas ficam
+    if task.source == "auto":
+        # criada a partir de um fornecedor: fica escondida, para não voltar a aparecer na sincronização
+        task.dismissed = True
+        task.active = False
+    else:
+        db.delete(task)  # os registos (logs) vão com ela; as despesas criadas ficam
     db.commit()
     return {"ok": True}
 
@@ -261,9 +273,15 @@ def _guess_frequency(dates, fallback):
 
 @router.post("/import-services")
 def import_services(condominium_id: str, db: Session = Depends(get_db), user: models.User = Depends(require_condo_admin)):
+    result = sync_services(db, condominium_id, user.id)
+    db.commit()
+    return result
+
+
+def sync_services(db: Session, condominium_id: str, user_id=None) -> dict:
     """Cria as manutenções preventivas a partir dos fornecedores/contratos já registados
     (limpeza, elevadores, jardinagem, extintores…) e junta ao histórico as despesas já
-    lançadas desses fornecedores. Pode ser corrido várias vezes: não duplica nada."""
+    lançadas desses fornecedores. Corre sozinha sempre que a lista é aberta: não duplica nada."""
     suppliers = db.query(models.Supplier).filter(models.Supplier.condominium_id == condominium_id).all()
     linked_expenses = {
         r[0] for r in db.query(models.MaintenanceLog.expense_id)
@@ -302,17 +320,20 @@ def import_services(condominium_id: str, db: Session = Depends(get_db), user: mo
                 condominium_id=condominium_id, title=_TITLES.get(category, CATEGORIES.get(category, "Manutenção")),
                 category=category, kind="preventiva", supplier_id=sup.id, frequency=freq,
                 estimated_cost=round(sum(amounts) / len(amounts), 2) if amounts else None, notes=notes, active=True,
+                source="auto", dismissed=False,
             )
             db.add(task)
             db.flush()
             created.append(f"{task.title} ({sup.name})")
+        elif task.dismissed:
+            continue  # o admin apagou-a: não mexer
         else:
             updated.append(f"{task.title} ({sup.name})")
         for e in own:
             if e.id in linked_expenses:
                 continue
             db.add(models.MaintenanceLog(task_id=task.id, done_at=e.expense_date, cost=e.amount,
-                                         notes=e.description, expense_id=e.id, created_by=user.id))
+                                         notes=e.description, expense_id=e.id, created_by=user_id))
             linked_expenses.add(e.id)
             logs_added += 1
         db.flush()
@@ -323,5 +344,5 @@ def import_services(condominium_id: str, db: Session = Depends(get_db), user: mo
         if last and (not task.last_done or last[0] > task.last_done):
             task.last_done = last[0]
             task.next_due = next_due_after(last[0], task.frequency)
-    db.commit()
+    db.flush()
     return {"created": created, "updated": updated, "logs_added": logs_added, "skipped": skipped}
