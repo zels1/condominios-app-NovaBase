@@ -52,7 +52,7 @@ for router in (
     condominiums.router, fractions.router, budgets.router, quotas.router, payments.router,
     latefees.router, reminders.router, suppliers.router, maintenance.router, assemblies.router,
     documents.router, dashboard.router, dashboard.overview_router, users.router, owners.router,
-    account.router, maintenance_tasks.router,
+    account.router, maintenance_tasks.router, owners.platform_router,
 ):
     app.include_router(router)
 

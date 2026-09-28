@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
-from ..auth import require_condo_admin
+from ..auth import require_condo_admin, require_admin
 from ..services.storage import update_auth_email, StorageError
-from ..services.purge import remove_owner_from_condo
+from ..services.purge import remove_owner_from_condo, delete_orphan_owners
 
 router = APIRouter(prefix="/condominiums/{condominium_id}/owners", tags=["Condóminos"])
 
@@ -37,6 +37,30 @@ def _fraction_in_condo(db: Session, condominium_id: str, fraction_id: str) -> mo
     return fraction
 
 
+def _admin_condo_ids(db: Session, admin: models.User):
+    q = db.query(models.Condominium.id)
+    if admin.role != models.UserRole.super_admin:
+        q = q.filter(models.Condominium.admin_user_id == admin.id)
+    return [r[0] for r in q.all()]
+
+
+def _user_condo_ids(db: Session, user_id: str):
+    return {
+        r[0] for r in db.query(models.Fraction.condominium_id)
+        .join(models.FractionOwner, models.FractionOwner.fraction_id == models.Fraction.id)
+        .filter(models.FractionOwner.user_id == user_id).all()
+    }
+
+
+def _admin_can_see(db: Session, admin: models.User, user_id: str) -> bool:
+    """Um admin vê os condóminos dos condomínios que gere e os que não têm condomínio
+    nenhum (fichas órfãs). O super_admin vê todos."""
+    if admin.role == models.UserRole.super_admin:
+        return True
+    condos = _user_condo_ids(db, user_id)
+    return not condos or bool(condos & set(_admin_condo_ids(db, admin)))
+
+
 def _fraction_link(link: models.FractionOwner, fraction: models.Fraction) -> schemas.OwnerFractionLink:
     return schemas.OwnerFractionLink(
         id=link.id,
@@ -44,6 +68,8 @@ def _fraction_link(link: models.FractionOwner, fraction: models.Fraction) -> sch
         fraction_identifier=fraction.identifier,
         ownership_share=float(link.ownership_share or 1),
         is_primary_contact=bool(link.is_primary_contact),
+        permilagem=float(fraction.permilagem or 0),
+        owned_permilagem=round(float(fraction.permilagem or 0) * float(link.ownership_share or 1), 3),
         insurance_company=fraction.insurance_company,
         insurance_policy_number=fraction.insurance_policy_number,
         insurance_valid_until=fraction.insurance_valid_until,
@@ -100,6 +126,7 @@ def list_owners_directory(
             iban=u.iban,
             notes=u.notes,
             fractions=sorted(data["fractions"], key=lambda f: f.fraction_identifier),
+            total_permilagem=round(sum(f.owned_permilagem for f in data["fractions"]), 3),
         ))
     registered.sort(key=lambda o: o.full_name.lower())
     return registered + pending
@@ -145,7 +172,40 @@ def add_owner(
         landline_phone=user.landline_phone, is_active=user.is_active, has_login=bool(user.supabase_user_id),
         nif=user.nif, correspondence_address=user.correspondence_address, iban=user.iban, notes=user.notes,
         fractions=[_fraction_link(link, fraction)],
+        total_permilagem=_fraction_link(link, fraction).owned_permilagem,
     )
+
+
+@router.post("/{user_id}/fractions", response_model=schemas.OwnerFractionLink)
+def assign_fraction(
+    condominium_id: str,
+    user_id: str,
+    payload: schemas.OwnerFractionAssign,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_condo_admin),
+):
+    """Associa um condómino já registado a mais uma fração deste condomínio (a permilagem
+    dele passa a ser a soma das frações). Serve também para voltar a ligar um condómino
+    que ficou sem condomínio."""
+    fraction = _fraction_in_condo(db, condominium_id, payload.fraction_id)
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user or user.role != models.UserRole.owner:
+        raise HTTPException(404, "Condómino não encontrado.")
+    if not _admin_can_see(db, admin, user.id):
+        raise HTTPException(403, "Este condómino pertence a um condomínio que não geres.")
+    already = db.query(models.FractionOwner).filter(
+        models.FractionOwner.fraction_id == fraction.id, models.FractionOwner.user_id == user.id
+    ).first()
+    if already:
+        raise HTTPException(409, f"{user.full_name} já está associado à fração {fraction.identifier}.")
+    link = models.FractionOwner(
+        fraction_id=fraction.id, user_id=user.id,
+        ownership_share=payload.ownership_share, is_primary_contact=payload.is_primary_contact,
+    )
+    db.add(link)
+    db.commit()
+    db.refresh(link)
+    return _fraction_link(link, fraction)
 
 
 @router.put("/pending/{link_id}", response_model=schemas.UserOut)
@@ -282,3 +342,66 @@ def delete_owner(
         raise HTTPException(404, "Este condómino não está associado a nenhuma fração deste condomínio.")
     db.commit()
     return {"ok": True, **result}
+
+
+# ---------------------------------------------------------------------------
+# Todos os condóminos registados na plataforma (vista do administrador)
+# ---------------------------------------------------------------------------
+platform_router = APIRouter(prefix="/owners", tags=["Condóminos"])
+
+
+@platform_router.get("", response_model=List[schemas.PlatformOwnerEntry])
+def list_platform_owners(db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
+    """Todos os condóminos registados: os dos condomínios que este admin gere e também os
+    que ficaram sem nenhum condomínio (ex: por erro ou fração apagada). O super_admin vê
+    todos os da plataforma."""
+    my_condos = set(_admin_condo_ids(db, admin))
+    condo_names = dict(db.query(models.Condominium.id, models.Condominium.name).all())
+    rows = (
+        db.query(models.FractionOwner.user_id, models.Fraction.condominium_id, models.Fraction.identifier,
+                 models.Fraction.permilagem, models.FractionOwner.ownership_share)
+        .join(models.Fraction, models.FractionOwner.fraction_id == models.Fraction.id)
+        .filter(models.FractionOwner.user_id.isnot(None))
+        .all()
+    )
+    by_user = {}
+    for uid, cid, ident, perm, share in rows:
+        c = by_user.setdefault(uid, {}).setdefault(cid, {"fractions": [], "permilagem": 0.0})
+        c["fractions"].append(ident)
+        c["permilagem"] += float(perm or 0) * float(share or 1)
+
+    result = []
+    for u in db.query(models.User).filter(models.User.role == models.UserRole.owner).all():
+        condos = by_user.get(u.id, {})
+        if condos and admin.role != models.UserRole.super_admin and not (set(condos) & my_condos):
+            continue  # condómino só de condomínios de outro administrador
+        visible = {cid: c for cid, c in condos.items() if admin.role == models.UserRole.super_admin or cid in my_condos}
+        result.append(schemas.PlatformOwnerEntry(
+            id=u.id, email=u.email, full_name=u.full_name, phone=u.phone, nif=u.nif,
+            is_active=u.is_active, has_login=bool(u.supabase_user_id), created_at=u.created_at,
+            unassigned=not condos,
+            condominiums=sorted([
+                schemas.PlatformOwnerCondo(
+                    condominium_id=cid, condominium_name=condo_names.get(cid, "?"),
+                    fractions=sorted(c["fractions"]), permilagem=round(c["permilagem"], 3),
+                ) for cid, c in visible.items()
+            ], key=lambda c: c.condominium_name.lower()),
+        ))
+    result.sort(key=lambda o: (not o.unassigned, (o.full_name or "").lower()))
+    return result
+
+
+@platform_router.delete("/{user_id}")
+def delete_unassigned_owner(user_id: str, db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
+    """Apaga a ficha de um condómino que não tem nenhum condomínio. Se tiver histórico
+    (pagamentos, ocorrências, votos…) a ficha fica guardada e o acesso é desativado."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user or user.role != models.UserRole.owner:
+        raise HTTPException(404, "Condómino não encontrado.")
+    if _user_condo_ids(db, user.id):
+        raise HTTPException(409, "Este condómino ainda tem frações associadas: retira-o primeiro no condomínio respetivo.")
+    removed = delete_orphan_owners(db, [user.id])
+    if not removed:
+        user.is_active = False
+    db.commit()
+    return {"ok": True, "deleted": bool(removed), "deactivated": not removed}

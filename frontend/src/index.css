@@ -346,3 +346,4 @@ tr.clickable-row:hover td { background: var(--primary-soft); }
 .vote-row input { padding: .4em .6em; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: .9rem; }
 .vote-row input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
 .admin-votes summary { cursor: pointer; }
+.assign-box { margin-top: .7rem; padding: .8rem .9rem .6rem; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); max-width: 560px; }

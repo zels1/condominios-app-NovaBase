@@ -148,6 +148,8 @@ class OwnerFractionLink(BaseModel):
     fraction_identifier: str
     ownership_share: float
     is_primary_contact: bool
+    permilagem: float = 0  # permilagem da fração no prédio
+    owned_permilagem: float = 0  # parte desta pessoa: permilagem × quota de propriedade
     insurance_company: Optional[str] = None
     insurance_policy_number: Optional[str] = None
     insurance_valid_until: Optional[date] = None
@@ -168,6 +170,34 @@ class OwnerDirectoryEntry(BaseModel):
     iban: Optional[str] = None
     notes: Optional[str] = None
     fractions: List[OwnerFractionLink] = []
+    total_permilagem: float = 0  # soma da permilagem de todas as frações dele neste condomínio
+
+
+class OwnerFractionAssign(BaseModel):
+    """Associar um condómino já registado a (mais) uma fração."""
+    fraction_id: str
+    ownership_share: float = Field(1.0, gt=0, le=1)
+    is_primary_contact: bool = True
+
+
+class PlatformOwnerCondo(BaseModel):
+    condominium_id: str
+    condominium_name: str
+    fractions: List[str] = []
+    permilagem: float = 0
+
+
+class PlatformOwnerEntry(BaseModel):
+    id: str
+    email: str
+    full_name: str
+    phone: Optional[str] = None
+    nif: Optional[str] = None
+    is_active: bool = True
+    has_login: bool = False
+    created_at: Optional[datetime] = None
+    condominiums: List[PlatformOwnerCondo] = []
+    unassigned: bool = False  # sem nenhuma fração em nenhum condomínio
 
 
 class OwnerProfile(BaseModel):

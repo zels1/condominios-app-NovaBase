@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { useCondo } from '../lib/CondoContext'
 import FilePicker from '../components/FilePicker'
@@ -8,6 +8,8 @@ const EMPTY_PROFILE = {
   full_name: '', email: '', phone: '', landline_phone: '', nif: '', correspondence_address: '', iban: '', notes: '',
 }
 const EMPTY_NEW = { ...EMPTY_PROFILE, fraction_id: '', ownership_share: '1000', is_primary_contact: true }
+
+function fmtPermil(v) { return `${Number(v || 0).toLocaleString('pt-PT', { maximumFractionDigits: 3 })}‰` }
 
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString('pt-PT') : '' }
 
@@ -75,6 +77,8 @@ export default function AdminOwners() {
   const [notice, setNotice] = useState(null)
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState('')
+  const [tab, setTab] = useState('condo') // condo | all
+  const [assigning, setAssigning] = useState(null) // id do condómino a associar a outra fração
 
   async function load() {
     if (!selectedCondo) return
@@ -205,12 +209,22 @@ export default function AdminOwners() {
       <div className="row between" style={{ alignItems: 'center', flexWrap: 'wrap', gap: '.6rem' }}>
         <h1 style={{ margin: 0 }}>Condóminos</h1>
         {!adding && (
-          <button className="btn" onClick={() => { setAdding(true); setEditing(null); setError(null); setNotice(null) }}>+ Adicionar condómino</button>
+          <button className="btn" onClick={() => { setTab('condo'); setAdding(true); setEditing(null); setError(null); setNotice(null) }}>+ Adicionar condómino</button>
         )}
       </div>
-      <p className="hint">Fichas dos condóminos deste condomínio (e convites ainda pendentes). Podes adicionar condóminos, editar os contactos e o seguro de cada fração, ou desativar o acesso à aplicação sem apagar o registo.</p>
+      <div className="choice-group" role="tablist" aria-label="Que condóminos mostrar">
+        <button type="button" role="tab" aria-selected={tab === 'condo'} className={`btn secondary small${tab === 'condo' ? ' selected' : ''}`}
+          onClick={() => { setTab('condo'); setNotice(null); setError(null) }}>Deste condomínio</button>
+        <button type="button" role="tab" aria-selected={tab === 'all'} className={`btn secondary small${tab === 'all' ? ' selected' : ''}`}
+          onClick={() => { setTab('all'); setAdding(false); setEditing(null); setNotice(null); setError(null) }}>Todos os condóminos registados</button>
+      </div>
       {notice && <div className="msg success">{notice}</div>}
       {error && !editing && <div className="msg error">{error}</div>}
+
+      {tab === 'all' ? (
+        <AllOwners condo={selectedCondo} fractions={fractions} onChanged={load} setNotice={setNotice} setError={setError} />
+      ) : (<>
+      <p className="hint" style={{ margin: 0 }}>Fichas dos condóminos deste condomínio (e convites ainda pendentes). Podes adicionar condóminos, associá-los a mais frações, editar os contactos e o seguro de cada fração, ou desativar o acesso à aplicação sem apagar o registo.</p>
 
       {adding && (
         <div className="card">
@@ -341,9 +355,9 @@ export default function AdminOwners() {
                   <div className="stack" style={{ gap: '.3rem', marginTop: '.5rem' }}>
                     {o.fractions.map((f) => (
                       <div key={f.id} className="row" style={{ gap: '.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <span className="badge">
-                          {f.fraction_identifier}
-                          {f.ownership_share < 1 && ` · ${Math.round(f.ownership_share * 1000)}‰`}
+                        <span className="badge" title={f.ownership_share < 1 ? `Quota de propriedade: ${Math.round(f.ownership_share * 1000)}‰ da fração` : undefined}>
+                          {f.fraction_identifier} · {fmtPermil(f.owned_permilagem)}
+                          {f.ownership_share < 1 && ` (${Math.round(f.ownership_share * 1000)}‰ de ${fmtPermil(f.permilagem)})`}
                           {!o.is_pending && (
                             <button onClick={() => removeFraction(f.fraction_id, f.id)} title="Remover esta associação" aria-label={`Remover associação à fração ${f.fraction_identifier}`}
                               style={{ marginLeft: '.4em', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--danger)', fontWeight: 700 }}>×</button>
@@ -360,8 +374,23 @@ export default function AdminOwners() {
                       </div>
                     ))}
                   </div>
+                  {!o.is_pending && (
+                    <p className="hint" style={{ margin: '.5rem 0 0' }}>
+                      Permilagem total: <strong>{fmtPermil(o.total_permilagem)}</strong>
+                      {o.fractions.length > 1 && ` (${o.fractions.length} frações)`}
+                    </p>
+                  )}
+                  {assigning === o.id && (
+                    <AssignFraction condoId={selectedCondo.id} owner={o} fractions={fractions}
+                      exclude={o.fractions.map((f) => f.fraction_id)}
+                      onCancel={() => setAssigning(null)}
+                      onDone={async (msg) => { setAssigning(null); setNotice(msg); await load() }} />
+                  )}
                 </div>
                 <div className="row" style={{ gap: '.4rem', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {!o.is_pending && assigning !== o.id && (
+                    <button className="btn secondary small" onClick={() => { setAssigning(o.id); setNotice(null); setError(null) }}>+ Associar fração</button>
+                  )}
                   <button className="btn secondary small" onClick={() => startEdit(o)}>
                     {o.is_pending ? 'Completar ficha' : 'Editar ficha'}
                   </button>
@@ -375,6 +404,164 @@ export default function AdminOwners() {
         ))}
         {owners.length === 0 && !adding && <div className="empty">Ainda não há condóminos. Carrega em "+ Adicionar condómino".</div>}
         {owners.length > 0 && visible.length === 0 && <div className="empty">Nenhum condómino corresponde à pesquisa.</div>}
+      </div>
+      </>)}
+    </div>
+  )
+}
+
+// Associar um condómino já registado a (mais) uma fração deste condomínio
+function AssignFraction({ condoId, owner, fractions, exclude, onCancel, onDone }) {
+  const [fractionId, setFractionId] = useState('')
+  const [share, setShare] = useState('1000')
+  const [primary, setPrimary] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const options = fractions.filter((f) => !exclude.includes(f.id))
+  const chosen = fractions.find((f) => f.id === fractionId)
+
+  async function submit(e) {
+    e.preventDefault()
+    setErr(null); setBusy(true)
+    try {
+      const s = Math.min(1000, Math.max(1, parseFloat(String(share).replace(',', '.')) || 1000)) / 1000
+      await api.post(`/condominiums/${condoId}/owners/${owner.id}/fractions`, { fraction_id: fractionId, ownership_share: s, is_primary_contact: primary })
+      await onDone(`${owner.full_name} ficou associado(a) à fração ${chosen?.identifier}.`)
+    } catch (e2) { setErr(e2.message); setBusy(false) }
+  }
+
+  if (options.length === 0) {
+    return (
+      <div className="msg error" style={{ marginTop: '.6rem' }}>
+        Não há mais frações neste condomínio para associar. <button type="button" className="link-button small" onClick={onCancel}>Fechar</button>
+      </div>
+    )
+  }
+  return (
+    <form onSubmit={submit} className="assign-box">
+      <div className="row form-row">
+        <div className="field" style={{ flex: 1, minWidth: 160 }}>
+          <label htmlFor={`as-f-${owner.id}`}>Fração</label>
+          <select id={`as-f-${owner.id}`} value={fractionId} onChange={(e) => setFractionId(e.target.value)} required>
+            <option value="">Selecionar…</option>
+            {options.map((f) => <option key={f.id} value={f.id}>{f.identifier} ({fmtPermil(f.permilagem)})</option>)}
+          </select>
+        </div>
+        <div className="field" style={{ flex: 1, minWidth: 160 }}>
+          <label htmlFor={`as-s-${owner.id}`}>Quota de propriedade (permilagem)</label>
+          <input id={`as-s-${owner.id}`} type="number" min={1} max={1000} step="any" value={share} onChange={(e) => setShare(e.target.value)} />
+        </div>
+      </div>
+      {chosen && (
+        <p className="hint" style={{ margin: '0 0 .5rem' }}>
+          A permilagem de {owner.full_name} passa de {fmtPermil(owner.total_permilagem || 0)} para{' '}
+          <strong>{fmtPermil((owner.total_permilagem || 0) + Number(chosen.permilagem) * (Math.min(1000, Math.max(1, parseFloat(share) || 1000)) / 1000))}</strong>.
+        </p>
+      )}
+      <label className="remember" style={{ margin: '0 0 .6rem' }}>
+        <input type="checkbox" checked={primary} onChange={(e) => setPrimary(e.target.checked)} /> Contacto principal desta fração
+      </label>
+      {err && <div className="msg error" style={{ marginBottom: '.5rem' }}>{err}</div>}
+      <div className="row">
+        <button className="btn small" disabled={busy}>{busy ? 'A associar…' : 'Associar fração'}</button>
+        <button type="button" className="btn secondary small" onClick={onCancel}>Cancelar</button>
+      </div>
+    </form>
+  )
+}
+
+// Todos os condóminos registados na plataforma: os dos condomínios que geres e também
+// os que ficaram sem condomínio nenhum (aparecem primeiro, para os poderes resolver).
+function AllOwners({ condo, fractions, onChanged, setNotice, setError }) {
+  const [list, setList] = useState(null)
+  const [query, setQuery] = useState('')
+  const [assigning, setAssigning] = useState(null)
+
+  async function load() {
+    try { setList(await api.get('/owners')) } catch (e) { setError(e.message) }
+  }
+  useEffect(() => { load() }, [])
+
+  async function remove(o) {
+    if (!window.confirm(`Apagar a ficha de ${o.full_name} (${o.email})?\n\nSe tiver histórico (pagamentos, ocorrências, votos…), a ficha fica guardada mas o acesso é desativado.`)) return
+    setError(null); setNotice(null)
+    try {
+      const res = await api.del(`/owners/${o.id}`)
+      setNotice(res.deleted ? `A ficha de ${o.full_name} foi apagada.` : `${o.full_name} tem histórico: a ficha foi guardada e o acesso desativado.`)
+      await load()
+    } catch (e) { setError(e.message) }
+  }
+
+  if (!list) return <div className="empty">A carregar…</div>
+  const q = query.trim().toLowerCase()
+  const visible = list.filter((o) => !q || [o.full_name, o.email, o.phone, o.nif, ...o.condominiums.map((c) => c.condominium_name)]
+    .some((v) => (v || '').toLowerCase().includes(q)))
+  const orphans = list.filter((o) => o.unassigned).length
+
+  return (
+    <div className="stack">
+      <p className="hint" style={{ margin: 0 }}>
+        Todos os condóminos com ficha na plataforma — dos condomínios que geres e também os que ficaram <strong>sem condomínio</strong> (por exemplo, por um erro ou por a fração ter sido apagada).
+        {' '}Podes associá-los a uma fração de <strong>{condo.name}</strong> ou apagar a ficha.
+      </p>
+      {orphans > 0 && <div className="msg error">{orphans} condómino(s) sem condomínio associado.</div>}
+      <div className="field" style={{ margin: 0, maxWidth: 360 }}>
+        <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Procurar por nome, email, telefone, NIF ou condomínio…" aria-label="Procurar condómino" />
+      </div>
+      <div className="card">
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Condómino</th><th>Condomínios e frações</th><th>Estado</th><th /></tr></thead>
+            <tbody>
+              {visible.map((o) => (
+                <Fragment key={o.id}>
+                  <tr>
+                    <td style={{ minWidth: 180 }}>
+                      <strong>{o.full_name}</strong>
+                      <div className="hint" style={{ fontSize: '.8rem', overflowWrap: 'anywhere' }}>{[o.email, o.phone, o.nif && `NIF ${o.nif}`].filter(Boolean).join(' · ')}</div>
+                    </td>
+                    <td>
+                      {o.unassigned
+                        ? <span className="badge danger">Sem condomínio</span>
+                        : o.condominiums.map((c) => (
+                          <div key={c.condominium_id} style={{ fontSize: '.9rem' }}>
+                            <strong>{c.condominium_name}</strong>: {c.fractions.join(', ')} <span className="hint">· {fmtPermil(c.permilagem)}</span>
+                          </div>
+                        ))}
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      {!o.is_active ? <span className="badge danger">Desativado</span>
+                        : o.has_login ? <span className="badge ok">Com conta</span>
+                          : <span className="badge">Ainda não entrou</span>}
+                    </td>
+                    <td>
+                      <div className="row" style={{ gap: '.3rem', justifyContent: 'flex-end' }}>
+                        {assigning !== o.id && (
+                          <button className="btn secondary small" onClick={() => { setAssigning(o.id); setNotice(null); setError(null) }}>Associar a fração</button>
+                        )}
+                        {o.unassigned && <button className="btn danger small" onClick={() => remove(o)}>Apagar ficha</button>}
+                      </div>
+                    </td>
+                  </tr>
+                  {assigning === o.id && (
+                    <tr>
+                      <td colSpan={4} style={{ background: 'var(--bg)' }}>
+                        <strong style={{ fontSize: '.9rem' }}>Associar {o.full_name} a uma fração de {condo.name}</strong>
+                        <AssignFraction condoId={condo.id}
+                          owner={{ ...o, total_permilagem: o.condominiums.find((c) => c.condominium_id === condo.id)?.permilagem || 0 }}
+                          fractions={fractions}
+                          exclude={[]}
+                          onCancel={() => setAssigning(null)}
+                          onDone={async (msg) => { setAssigning(null); setNotice(msg); await load(); await onChanged() }} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+              {visible.length === 0 && <tr><td colSpan={4} className="empty">{list.length ? 'Nenhum condómino corresponde à pesquisa.' : 'Ainda não há condóminos registados.'}</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
