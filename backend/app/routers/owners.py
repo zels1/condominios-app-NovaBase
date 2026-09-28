@@ -37,13 +37,6 @@ def _fraction_in_condo(db: Session, condominium_id: str, fraction_id: str) -> mo
     return fraction
 
 
-def _admin_condo_ids(db: Session, admin: models.User):
-    q = db.query(models.Condominium.id)
-    if admin.role != models.UserRole.super_admin:
-        q = q.filter(models.Condominium.admin_user_id == admin.id)
-    return [r[0] for r in q.all()]
-
-
 def _user_condo_ids(db: Session, user_id: str):
     return {
         r[0] for r in db.query(models.Fraction.condominium_id)
@@ -53,12 +46,8 @@ def _user_condo_ids(db: Session, user_id: str):
 
 
 def _admin_can_see(db: Session, admin: models.User, user_id: str) -> bool:
-    """Um admin vê os condóminos dos condomínios que gere e os que não têm condomínio
-    nenhum (fichas órfãs). O super_admin vê todos."""
-    if admin.role == models.UserRole.super_admin:
-        return True
-    condos = _user_condo_ids(db, user_id)
-    return not condos or bool(condos & set(_admin_condo_ids(db, admin)))
+    """Os administradores têm acesso a todos os condóminos registados na plataforma."""
+    return admin.role in (models.UserRole.admin, models.UserRole.super_admin)
 
 
 def _fraction_link(link: models.FractionOwner, fraction: models.Fraction) -> schemas.OwnerFractionLink:
@@ -352,10 +341,8 @@ platform_router = APIRouter(prefix="/owners", tags=["Condóminos"])
 
 @platform_router.get("", response_model=List[schemas.PlatformOwnerEntry])
 def list_platform_owners(db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
-    """Todos os condóminos registados: os dos condomínios que este admin gere e também os
-    que ficaram sem nenhum condomínio (ex: por erro ou fração apagada). O super_admin vê
-    todos os da plataforma."""
-    my_condos = set(_admin_condo_ids(db, admin))
+    """Todos os condóminos registados na base de dados, qualquer que seja o condomínio
+    (incluindo os que ficaram sem nenhum condomínio, que aparecem primeiro)."""
     condo_names = dict(db.query(models.Condominium.id, models.Condominium.name).all())
     rows = (
         db.query(models.FractionOwner.user_id, models.Fraction.condominium_id, models.Fraction.identifier,
@@ -373,9 +360,7 @@ def list_platform_owners(db: Session = Depends(get_db), admin: models.User = Dep
     result = []
     for u in db.query(models.User).filter(models.User.role == models.UserRole.owner).all():
         condos = by_user.get(u.id, {})
-        if condos and admin.role != models.UserRole.super_admin and not (set(condos) & my_condos):
-            continue  # condómino só de condomínios de outro administrador
-        visible = {cid: c for cid, c in condos.items() if admin.role == models.UserRole.super_admin or cid in my_condos}
+        visible = condos
         result.append(schemas.PlatformOwnerEntry(
             id=u.id, email=u.email, full_name=u.full_name, phone=u.phone, nif=u.nif,
             is_active=u.is_active, has_login=bool(u.supabase_user_id), created_at=u.created_at,

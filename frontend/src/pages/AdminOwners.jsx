@@ -501,7 +501,7 @@ function AllOwners({ condo, fractions, onChanged, setNotice, setError }) {
   return (
     <div className="stack">
       <p className="hint" style={{ margin: 0 }}>
-        Todos os condóminos com ficha na plataforma — dos condomínios que geres e também os que ficaram <strong>sem condomínio</strong> (por exemplo, por um erro ou por a fração ter sido apagada).
+        Todos os condóminos registados na plataforma, seja qual for o condomínio — incluindo os que ficaram <strong>sem condomínio</strong> (por exemplo, por um erro ou por a fração ter sido apagada), que aparecem primeiro.
         {' '}Podes associá-los a uma fração de <strong>{condo.name}</strong> ou apagar a ficha.
       </p>
       {orphans > 0 && <div className="msg error">{orphans} condómino(s) sem condomínio associado.</div>}
