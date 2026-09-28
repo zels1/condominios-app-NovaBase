@@ -164,7 +164,7 @@ function FractionCard({ fraction, condoId, expanded, onToggle, editing, onEdit, 
     }), `Fração ${editForm.identifier.trim()} atualizada.`).then((ok) => ok && onEdit())
   }
   const invite = () => newOwnerEmail && run(async () => {
-    await api.post(`${base}/owners`, { email: newOwnerEmail.trim(), ownership_share: 1, is_primary_contact: owners.length === 0 })
+    await api.post(`${base}/owners`, { email: newOwnerEmail.trim(), is_primary_contact: owners.length === 0 })
     setNewOwnerEmail('')
   })
   const removeOwner = (o) => {

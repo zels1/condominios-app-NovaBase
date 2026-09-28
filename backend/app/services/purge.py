@@ -37,7 +37,9 @@ def delete_fraction(db: Session, fraction: models.Fraction) -> dict:
     if quota_ids:
         db.query(models.ReminderLog).filter(models.ReminderLog.quota_id.in_(quota_ids)).delete(synchronize_session=False)
         db.query(models.Payment).filter(models.Payment.quota_id.in_(quota_ids)).delete(synchronize_session=False)
+        db.query(models.QuotaLine).filter(models.QuotaLine.quota_id.in_(quota_ids)).delete(synchronize_session=False)
         db.query(models.Quota).filter(models.Quota.id.in_(quota_ids)).delete(synchronize_session=False)
+    db.query(models.FractionCharge).filter(models.FractionCharge.fraction_id == fid).delete(synchronize_session=False)
     db.query(models.Vote).filter(models.Vote.fraction_id == fid).delete(synchronize_session=False)
     db.query(models.Attendance).filter(models.Attendance.fraction_id == fid).delete(synchronize_session=False)
     db.query(models.Proxy).filter(models.Proxy.fraction_id == fid).delete(synchronize_session=False)
@@ -95,9 +97,15 @@ def remove_owner_from_condo(db: Session, user_id: str, condominium_id: str) -> d
         models.FractionOwner.user_id == user_id, models.FractionOwner.fraction_id.in_(fraction_ids)
     ).count() if fraction_ids else 0
     if fraction_ids:
+        touched = _ids(db.query(models.FractionOwner.fraction_id).filter(
+            models.FractionOwner.user_id == user_id, models.FractionOwner.fraction_id.in_(fraction_ids)))
         db.query(models.FractionOwner).filter(
             models.FractionOwner.user_id == user_id, models.FractionOwner.fraction_id.in_(fraction_ids)
         ).delete(synchronize_session=False)
+        db.flush()
+        from .ownership import normalize
+        for fid in set(touched):
+            normalize(db, fid)
         # procurações em que era procurador neste condomínio deixam de apontar para ele
         assembly_ids = _ids(db.query(models.Assembly.id).filter(models.Assembly.condominium_id == condominium_id))
         if assembly_ids:
@@ -157,7 +165,11 @@ def delete_condominium(db: Session, condo: models.Condominium) -> dict:
     if quota_ids:
         wipe(models.ReminderLog, models.ReminderLog.quota_id.in_(quota_ids))
         wipe(models.Payment, models.Payment.quota_id.in_(quota_ids))
+        wipe(models.QuotaLine, models.QuotaLine.quota_id.in_(quota_ids))
         wipe(models.Quota, models.Quota.id.in_(quota_ids))
+    if fraction_ids:
+        wipe(models.FractionCharge, models.FractionCharge.fraction_id.in_(fraction_ids))
+    wipe(models.ChargeType, models.ChargeType.condominium_id == cid)
     wipe(models.Budget, models.Budget.condominium_id == cid)
     wipe(models.ReminderConfig, models.ReminderConfig.condominium_id == cid)
     wipe(models.LateFeeConfig, models.LateFeeConfig.condominium_id == cid)

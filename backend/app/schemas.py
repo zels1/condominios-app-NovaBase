@@ -127,7 +127,7 @@ class FractionOwnerCreate(BaseModel):
     # ela se registar com esse email).
     user_id: Optional[str] = None
     email: Optional[EmailStr] = None
-    ownership_share: float = 1.0
+    ownership_share: Optional[float] = Field(None, gt=0, le=1)  # vazio = repartir por igual
     is_primary_contact: bool = True
 
 
@@ -171,12 +171,14 @@ class OwnerDirectoryEntry(BaseModel):
     notes: Optional[str] = None
     fractions: List[OwnerFractionLink] = []
     total_permilagem: float = 0  # soma da permilagem de todas as frações dele neste condomínio
+    invite_status: Optional[str] = None  # invited | reset_sent (só na resposta de "adicionar")
+    invite_error: Optional[str] = None
 
 
 class OwnerFractionAssign(BaseModel):
-    """Associar um condómino já registado a (mais) uma fração."""
+    """Associar um condómino já registado a (mais) uma fração, ou alterar a associação."""
     fraction_id: str
-    ownership_share: float = Field(1.0, gt=0, le=1)
+    ownership_share: Optional[float] = Field(None, gt=0, le=1)  # vazio = repartir por igual
     is_primary_contact: bool = True
 
 
@@ -214,8 +216,9 @@ class OwnerProfile(BaseModel):
 
 class OwnerCreate(OwnerProfile):
     fraction_id: str
-    ownership_share: float = Field(1.0, gt=0, le=1)
+    ownership_share: Optional[float] = Field(None, gt=0, le=1)  # vazio = repartir por igual com os outros proprietários
     is_primary_contact: bool = True
+    send_invite: bool = False  # enviar convite por email para criar conta
 
 
 class FractionTransfer(BaseModel):
@@ -258,6 +261,14 @@ class QuotaGenerateRequest(BaseModel):
     force: bool = False
 
 
+class QuotaLineOut(ORMBase):
+    id: str
+    charge_type_id: Optional[str] = None
+    name: str
+    category: str
+    amount: float
+
+
 class QuotaOut(ORMBase):
     id: str
     fraction_id: str
@@ -269,6 +280,53 @@ class QuotaOut(ORMBase):
     status: str
     late_fee_waived: bool
     late_fee_applied_at: Optional[datetime] = None
+    kind: str = "regular"
+    description: Optional[str] = None
+    lines: List[QuotaLineOut] = []
+
+
+# ---------- Rubricas das quotas ----------
+class ChargeTypeCreate(BaseModel):
+    name: str = Field(min_length=1)
+    category: str = "outra"  # ordinaria | fundo_reserva | extraordinaria | outra
+    method: str = "permilagem"  # orcamento | percentagem | permilagem | igual | fixo
+    value: float = Field(0, ge=0)
+    recurring: bool = True
+    active: bool = True
+    position: int = 0
+
+
+class ChargeTypeOut(ORMBase):
+    id: str
+    name: str
+    category: str
+    method: str
+    value: float
+    recurring: bool
+    active: bool
+    position: int = 0
+
+
+class FractionChargeSet(BaseModel):
+    mode: str  # normal | isento | valor
+    amount: Optional[float] = Field(None, ge=0)
+
+
+class FractionChargeOut(ORMBase):
+    fraction_id: str
+    charge_type_id: str
+    mode: str
+    amount: Optional[float] = None
+
+
+class ExtraQuotaCreate(BaseModel):
+    charge_type_id: str
+    name: Optional[str] = None  # por defeito, o nome da rubrica
+    total_amount: float = Field(gt=0)  # total a repartir (ou valor por fração, se method=fixo)
+    method: str = "permilagem"  # permilagem | igual | fixo
+    reference_month: date
+    due_date: date
+    fraction_ids: Optional[List[str]] = None  # vazio = todas as frações
 
 
 class QuotaWithFraction(QuotaOut):

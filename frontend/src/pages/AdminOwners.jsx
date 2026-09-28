@@ -7,7 +7,21 @@ import { DOC_ACCEPT, checkDocFile, uploadDocFile } from '../lib/files'
 const EMPTY_PROFILE = {
   full_name: '', email: '', phone: '', landline_phone: '', nif: '', correspondence_address: '', iban: '', notes: '',
 }
-const EMPTY_NEW = { ...EMPTY_PROFILE, fraction_id: '', ownership_share: '1000', is_primary_contact: true }
+const EMPTY_NEW = { ...EMPTY_PROFILE, fraction_id: '', ownership_share: '', is_primary_contact: true, send_invite: true }
+
+// quota de propriedade em ‰ (texto) → fração de 0 a 1; vazio = repartir automaticamente
+function shareFromPermil(v) {
+  const n = parseFloat(String(v ?? '').replace(',', '.'))
+  if (Number.isNaN(n) || n <= 0) return undefined
+  return Math.min(1000, n) / 1000
+}
+
+function inviteText(status, error, email) {
+  if (error) return `Não foi possível enviar o convite: ${error}`
+  if (status === 'invited') return `Convite enviado para ${email}: a pessoa recebe um email com um link para criar a palavra-passe.`
+  if (status === 'reset_sent') return `${email} já tinha conta: foi enviado um email para definir a palavra-passe.`
+  return ''
+}
 
 function fmtPermil(v) { return `${Number(v || 0).toLocaleString('pt-PT', { maximumFractionDigits: 3 })}‰` }
 
@@ -78,7 +92,8 @@ export default function AdminOwners() {
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState('condo') // condo | all
-  const [assigning, setAssigning] = useState(null) // id do condómino a associar a outra fração
+  const [linkDrafts, setLinkDrafts] = useState([]) // frações do condómino em edição
+  const [inviting, setInviting] = useState(null)
 
   async function load() {
     if (!selectedCondo) return
@@ -115,7 +130,51 @@ export default function AdminOwners() {
       }
     })
     setInsurance(ins)
+    setLinkDrafts(o.is_pending ? [] : o.fractions.map((f) => ({
+      id: f.id, fraction_id: f.fraction_id, orig_fraction_id: f.fraction_id,
+      share: String(Math.round(f.ownership_share * 1000)), orig_share: String(Math.round(f.ownership_share * 1000)),
+      is_primary: f.is_primary_contact, orig_primary: f.is_primary_contact, removed: false,
+    })))
     setError(null)
+  }
+
+  // outros proprietários (já registados) de uma fração, para mostrar a repartição
+  function coOwners(fractionId, exceptId) {
+    return owners.filter((x) => x.id !== exceptId && x.fractions.some((f) => f.fraction_id === fractionId)).map((x) => x.full_name)
+  }
+
+  async function sendInvite(o) {
+    setError(null); setNotice(null); setInviting(o.id)
+    try {
+      const r = await api.post(`/condominiums/${selectedCondo.id}/owners/${o.id}/invite`)
+      setNotice(inviteText(r.status, null, r.email))
+    } catch (e) { setError(e.message) }
+    setInviting(null)
+  }
+
+  async function saveLinks(o) {
+    const base = `/condominiums/${selectedCondo.id}/owners/${o.id}/fractions`
+    const active = linkDrafts.filter((l) => !l.removed && l.fraction_id)
+    const chosen = active.map((l) => l.fraction_id)
+    if (new Set(chosen).size !== chosen.length) throw new Error('A mesma fração aparece duas vezes na ficha.')
+    // primeiro as novas e as alteradas; só no fim as removidas (para a ficha nunca ficar sem frações a meio)
+    for (const l of active.filter((x) => !x.id)) {
+      await api.post(base, { fraction_id: l.fraction_id, ownership_share: shareFromPermil(l.share), is_primary_contact: l.is_primary })
+    }
+    for (const l of active.filter((x) => x.id)) {
+      const moved = l.fraction_id !== l.orig_fraction_id
+      const shareChanged = l.share !== l.orig_share
+      if (moved || shareChanged || l.is_primary !== l.orig_primary) {
+        await api.put(`${base}/${l.id}`, {
+          fraction_id: l.fraction_id,
+          ownership_share: moved && !shareChanged ? undefined : shareFromPermil(l.share),
+          is_primary_contact: l.is_primary,
+        })
+      }
+    }
+    for (const l of linkDrafts.filter((x) => x.removed && x.id)) {
+      await api.del(`/condominiums/${selectedCondo.id}/fractions/${l.orig_fraction_id}/owners/${l.id}`)
+    }
   }
 
   async function saveEdit(o) {
@@ -128,6 +187,7 @@ export default function AdminOwners() {
         await api.put(`${base}/owners/pending/${o.id.replace('pending-', '')}`, profile)
       } else {
         await api.put(`${base}/owners/${o.id}`, form)
+        await saveLinks(o)
       }
       // seguro de cada fração (só as que mudaram)
       for (const f of o.fractions) {
@@ -159,10 +219,10 @@ export default function AdminOwners() {
     setBusy(true)
     setError(null)
     try {
-      // quota de propriedade em permilagem: 1000‰ = único proprietário, 500‰ = metade
-      const share = Math.min(1000, Math.max(1, parseFloat(String(newForm.ownership_share).replace(',', '.')) || 1000)) / 1000
-      await api.post(`/condominiums/${selectedCondo.id}/owners`, { ...newForm, ownership_share: share })
-      setNotice(`${newForm.full_name} adicionado(a). Quando criar conta com ${newForm.email}, fica logo ligado(a) a esta ficha.`)
+      // quota de propriedade em permilagem (vazio = repartir por igual com os outros proprietários)
+      const r = await api.post(`/condominiums/${selectedCondo.id}/owners`, { ...newForm, ownership_share: shareFromPermil(newForm.ownership_share) })
+      const inv = newForm.send_invite ? ' ' + inviteText(r.invite_status, r.invite_error, newForm.email) : ` Quando criar conta com ${newForm.email}, fica logo ligado(a) a esta ficha.`
+      setNotice(`${newForm.full_name} adicionado(a) a ${selectedCondo.name}.${inv}`)
       setNewForm(EMPTY_NEW)
       setAdding(false)
       await load()
@@ -243,14 +303,22 @@ export default function AdminOwners() {
               </div>
               <div className="field" style={{ flex: 1, minWidth: 180 }}>
                 <label htmlFor="new-share">Quota de propriedade (permilagem)</label>
-                <input id="new-share" type="number" min={1} max={1000} step="any" value={newForm.ownership_share}
+                <input id="new-share" type="number" min={1} max={1000} step="any" value={newForm.ownership_share} placeholder="Automática"
                   onChange={(e) => setNewForm({ ...newForm, ownership_share: e.target.value })} />
-                <span className="hint">Parte da fração que pertence a esta pessoa: 1000‰ = único proprietário, 500‰ = metade.</span>
+                <span className="hint">
+                  {selectedFraction && coOwners(selectedFraction.id).length > 0
+                    ? `Esta fração já tem ${coOwners(selectedFraction.id).join(', ')}. Se deixares vazio, a fração é repartida por igual (${Math.round(1000 / (coOwners(selectedFraction.id).length + 1))}‰ cada); se indicares um valor, os outros ficam com o restante.`
+                    : 'Deixa vazio se for o único proprietário (1000‰). 500‰ = metade.'}
+                </span>
               </div>
             </div>
             <label className="remember" style={{ margin: 0 }}>
               <input type="checkbox" checked={newForm.is_primary_contact} onChange={(e) => setNewForm({ ...newForm, is_primary_contact: e.target.checked })} />
               Contacto principal da fração (recebe as quotas e comunicações)
+            </label>
+            <label className="remember" style={{ margin: 0 }}>
+              <input type="checkbox" checked={newForm.send_invite} onChange={(e) => setNewForm({ ...newForm, send_invite: e.target.checked })} />
+              Enviar convite por email para criar a palavra-passe e entrar na aplicação (fica logo associado a {selectedCondo.name})
             </label>
             <div className="row">
               <button className="btn small" disabled={busy}>{busy ? 'A guardar…' : 'Adicionar condómino'}</button>
@@ -279,6 +347,49 @@ export default function AdminOwners() {
                     : o.has_login
                       ? 'Esta pessoa já tem conta: ao mudar o email, passa a entrar na app com o novo email.'
                       : 'Ainda não criou conta: vai poder criá-la com este email.'} />
+
+                {!o.is_pending && (
+                  <div className="stack" style={{ gap: '.4rem' }}>
+                    <h4 style={{ margin: '.3em 0 0' }}>Frações</h4>
+                    <span className="hint">Podes trocar a fração (se foi associada por engano), acrescentar outra, ou mudar a quota de propriedade. Numa fração com vários proprietários, deixa a quota vazio para repartir por igual.</span>
+                    {linkDrafts.map((l, i) => {
+                      const upd = (patch) => setLinkDrafts((ls) => ls.map((x, j) => (j === i ? { ...x, ...patch } : x)))
+                      const fr = fractions.find((f) => f.id === l.fraction_id)
+                      const others = l.fraction_id ? coOwners(l.fraction_id, o.id) : []
+                      return (
+                        <div key={l.id || `new-${i}`} className="row form-row link-row" style={l.removed ? { opacity: .5 } : undefined}>
+                          <div className="field" style={{ flex: 1, minWidth: 150, margin: 0 }}>
+                            <label htmlFor={`lk-f-${i}`}>Fração</label>
+                            <select id={`lk-f-${i}`} value={l.fraction_id} disabled={l.removed} onChange={(e) => upd({ fraction_id: e.target.value })} required={!l.removed}>
+                              <option value="">Selecionar…</option>
+                              {fractions.map((f) => <option key={f.id} value={f.id}>{f.identifier} ({fmtPermil(f.permilagem)})</option>)}
+                            </select>
+                            {fr && others.length > 0 && <span className="hint">Também: {others.join(', ')}</span>}
+                          </div>
+                          <div className="field" style={{ width: 170, margin: 0 }}>
+                            <label htmlFor={`lk-s-${i}`}>Quota de propriedade (‰)</label>
+                            <input id={`lk-s-${i}`} type="number" min={1} max={1000} step="any" placeholder="Automática" value={l.share} disabled={l.removed}
+                              onChange={(e) => upd({ share: e.target.value })} />
+                            {fr && <span className="hint">= {fmtPermil(Number(fr.permilagem) * (shareFromPermil(l.share) ?? 1 / (others.length + 1)))} do prédio</span>}
+                          </div>
+                          <label className="remember" style={{ margin: '1.5rem 0 0' }}>
+                            <input type="checkbox" checked={l.is_primary} disabled={l.removed} onChange={(e) => upd({ is_primary: e.target.checked })} /> Contacto principal
+                          </label>
+                          <button type="button" className="btn secondary small" style={{ marginTop: '1.3rem' }}
+                            onClick={() => (l.id ? upd({ removed: !l.removed }) : setLinkDrafts((ls) => ls.filter((_, j) => j !== i)))}>
+                            {l.removed ? 'Manter' : 'Remover'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                    <div>
+                      <button type="button" className="btn secondary small"
+                        onClick={() => setLinkDrafts((ls) => [...ls, { id: null, fraction_id: '', share: '', is_primary: true, removed: false }])}>
+                        + Adicionar fração
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {o.fractions.length > 0 && (
                   <div className="stack" style={{ gap: '.6rem' }}>
@@ -380,16 +491,13 @@ export default function AdminOwners() {
                       {o.fractions.length > 1 && ` (${o.fractions.length} frações)`}
                     </p>
                   )}
-                  {assigning === o.id && (
-                    <AssignFraction condoId={selectedCondo.id} owner={o} fractions={fractions}
-                      exclude={o.fractions.map((f) => f.fraction_id)}
-                      onCancel={() => setAssigning(null)}
-                      onDone={async (msg) => { setAssigning(null); setNotice(msg); await load() }} />
-                  )}
                 </div>
                 <div className="row" style={{ gap: '.4rem', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                  {!o.is_pending && assigning !== o.id && (
-                    <button className="btn secondary small" onClick={() => { setAssigning(o.id); setNotice(null); setError(null) }}>+ Associar fração</button>
+                  {!o.is_pending && !o.has_login && o.is_active && (
+                    <button className="btn secondary small" disabled={inviting === o.id} onClick={() => sendInvite(o)}
+                      title="Envia um email com um link para criar a palavra-passe e entrar na aplicação">
+                      {inviting === o.id ? 'A enviar…' : '✉ Enviar convite'}
+                    </button>
                   )}
                   <button className="btn secondary small" onClick={() => startEdit(o)}>
                     {o.is_pending ? 'Completar ficha' : 'Editar ficha'}
@@ -413,7 +521,7 @@ export default function AdminOwners() {
 // Associar um condómino já registado a (mais) uma fração deste condomínio
 function AssignFraction({ condoId, owner, fractions, exclude, onCancel, onDone }) {
   const [fractionId, setFractionId] = useState('')
-  const [share, setShare] = useState('1000')
+  const [share, setShare] = useState('')
   const [primary, setPrimary] = useState(true)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
@@ -424,8 +532,7 @@ function AssignFraction({ condoId, owner, fractions, exclude, onCancel, onDone }
     e.preventDefault()
     setErr(null); setBusy(true)
     try {
-      const s = Math.min(1000, Math.max(1, parseFloat(String(share).replace(',', '.')) || 1000)) / 1000
-      await api.post(`/condominiums/${condoId}/owners/${owner.id}/fractions`, { fraction_id: fractionId, ownership_share: s, is_primary_contact: primary })
+      await api.post(`/condominiums/${condoId}/owners/${owner.id}/fractions`, { fraction_id: fractionId, ownership_share: shareFromPermil(share), is_primary_contact: primary })
       await onDone(`${owner.full_name} ficou associado(a) à fração ${chosen?.identifier}.`)
     } catch (e2) { setErr(e2.message); setBusy(false) }
   }
@@ -449,13 +556,13 @@ function AssignFraction({ condoId, owner, fractions, exclude, onCancel, onDone }
         </div>
         <div className="field" style={{ flex: 1, minWidth: 160 }}>
           <label htmlFor={`as-s-${owner.id}`}>Quota de propriedade (permilagem)</label>
-          <input id={`as-s-${owner.id}`} type="number" min={1} max={1000} step="any" value={share} onChange={(e) => setShare(e.target.value)} />
+          <input id={`as-s-${owner.id}`} type="number" min={1} max={1000} step="any" value={share} placeholder="Automática" onChange={(e) => setShare(e.target.value)} />
         </div>
       </div>
       {chosen && (
         <p className="hint" style={{ margin: '0 0 .5rem' }}>
           A permilagem de {owner.full_name} passa de {fmtPermil(owner.total_permilagem || 0)} para{' '}
-          <strong>{fmtPermil((owner.total_permilagem || 0) + Number(chosen.permilagem) * (Math.min(1000, Math.max(1, parseFloat(share) || 1000)) / 1000))}</strong>.
+          <strong>{fmtPermil((owner.total_permilagem || 0) + Number(chosen.permilagem) * (shareFromPermil(share) ?? 1))}</strong>{shareFromPermil(share) ? '' : ' (se for o único proprietário da fração)'}.
         </p>
       )}
       <label className="remember" style={{ margin: '0 0 .6rem' }}>

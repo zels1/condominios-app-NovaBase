@@ -211,3 +211,117 @@ def delete_log(condominium_id: str, task_id: str, log_id: str, db: Session = Dep
         task.next_due = next_due_after(last[0], task.frequency)
     db.commit()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Importar os serviços já registados (fornecedores, contratos e despesas)
+# ---------------------------------------------------------------------------
+_KEYWORDS = [
+    ("elevador", ("elevador", "ascensor", "elevadores")),
+    ("extintores", ("extintor", "incêndio", "incendio", "sadi")),
+    ("limpeza", ("limpeza", "limpezas", "higiene")),
+    ("jardinagem", ("jardin", "jardim", "jardins", "espaços verdes")),
+    ("desinfestacao", ("desinfest", "desratiz", "pragas", "fumiga")),
+    ("canalizacao", ("canaliz", "picheleiro", "esgoto")),
+    ("portao", ("portão", "portao", "garagem", "automatismo")),
+    ("gas", ("gás", " gas")),
+    ("eletricidade", ("eletricista", "manutenção elétrica", "manutencao eletrica", "quadro elétrico")),
+]
+_DEFAULT_FREQ = {
+    "elevador": "mensal", "extintores": "anual", "limpeza": "mensal", "jardinagem": "mensal",
+    "desinfestacao": "semestral", "canalizacao": "anual", "portao": "semestral", "gas": "anual", "eletricidade": "anual",
+}
+_TITLES = {
+    "elevador": "Manutenção dos elevadores", "extintores": "Manutenção dos extintores",
+    "limpeza": "Limpeza das partes comuns", "jardinagem": "Manutenção dos jardins",
+    "desinfestacao": "Desinfestação", "canalizacao": "Manutenção da canalização",
+    "portao": "Manutenção do portão", "gas": "Inspeção da instalação de gás", "eletricidade": "Manutenção elétrica",
+}
+
+
+def _guess_category(*texts):
+    blob = " " + " ".join(t.lower() for t in texts if t) + " "
+    for cat, words in _KEYWORDS:
+        if any(w in blob for w in words):
+            return cat
+    return None
+
+
+def _guess_frequency(dates, fallback):
+    ds = sorted(set(dates))
+    if len(ds) < 2:
+        return fallback
+    gaps = sorted((b - a).days for a, b in zip(ds, ds[1:]))
+    g = gaps[len(gaps) // 2]
+    for limit, freq in ((10, "semanal"), (45, "mensal"), (120, "trimestral"), (240, "semestral"), (500, "anual")):
+        if g <= limit:
+            return freq
+    return "bienal"
+
+
+@router.post("/import-services")
+def import_services(condominium_id: str, db: Session = Depends(get_db), user: models.User = Depends(require_condo_admin)):
+    """Cria as manutenções preventivas a partir dos fornecedores/contratos já registados
+    (limpeza, elevadores, jardinagem, extintores…) e junta ao histórico as despesas já
+    lançadas desses fornecedores. Pode ser corrido várias vezes: não duplica nada."""
+    suppliers = db.query(models.Supplier).filter(models.Supplier.condominium_id == condominium_id).all()
+    linked_expenses = {
+        r[0] for r in db.query(models.MaintenanceLog.expense_id)
+        .join(models.MaintenanceTask, models.MaintenanceLog.task_id == models.MaintenanceTask.id)
+        .filter(models.MaintenanceTask.condominium_id == condominium_id, models.MaintenanceLog.expense_id.isnot(None)).all()
+    }
+    created, updated, logs_added, skipped = [], [], 0, []
+    for sup in suppliers:
+        contracts = db.query(models.Contract).filter(models.Contract.supplier_id == sup.id).all()
+        expenses = (
+            db.query(models.Expense)
+            .filter(models.Expense.condominium_id == condominium_id, models.Expense.supplier_id == sup.id)
+            .order_by(models.Expense.expense_date)
+            .all()
+        )
+        category = _guess_category(sup.category, sup.name, *[c.title for c in contracts])
+        if not category:
+            skipped.append(sup.name)
+            continue
+        # só as despesas que são deste serviço (ex: o fornecedor da limpeza também pode ter outras)
+        own = [e for e in expenses if _guess_category(e.category, e.description) in (category, None)]
+        task = db.query(models.MaintenanceTask).filter(
+            models.MaintenanceTask.condominium_id == condominium_id,
+            models.MaintenanceTask.supplier_id == sup.id,
+            models.MaintenanceTask.category == category,
+        ).first()
+        today = date.today()
+        active_contract = next((c for c in contracts if not c.end_date or c.end_date >= today), None)
+        if not task:
+            freq = _guess_frequency([e.expense_date for e in own], _DEFAULT_FREQ.get(category, "anual"))
+            notes = None
+            if active_contract:
+                notes = f"{active_contract.title}" + (f" (até {active_contract.end_date:%d/%m/%Y})" if active_contract.end_date else "")
+            amounts = [float(e.amount) for e in own[-3:]]
+            task = models.MaintenanceTask(
+                condominium_id=condominium_id, title=_TITLES.get(category, CATEGORIES.get(category, "Manutenção")),
+                category=category, kind="preventiva", supplier_id=sup.id, frequency=freq,
+                estimated_cost=round(sum(amounts) / len(amounts), 2) if amounts else None, notes=notes, active=True,
+            )
+            db.add(task)
+            db.flush()
+            created.append(f"{task.title} ({sup.name})")
+        else:
+            updated.append(f"{task.title} ({sup.name})")
+        for e in own:
+            if e.id in linked_expenses:
+                continue
+            db.add(models.MaintenanceLog(task_id=task.id, done_at=e.expense_date, cost=e.amount,
+                                         notes=e.description, expense_id=e.id, created_by=user.id))
+            linked_expenses.add(e.id)
+            logs_added += 1
+        db.flush()
+        last = (
+            db.query(models.MaintenanceLog.done_at).filter(models.MaintenanceLog.task_id == task.id)
+            .order_by(models.MaintenanceLog.done_at.desc()).first()
+        )
+        if last and (not task.last_done or last[0] > task.last_done):
+            task.last_done = last[0]
+            task.next_due = next_due_after(last[0], task.frequency)
+    db.commit()
+    return {"created": created, "updated": updated, "logs_added": logs_added, "skipped": skipped}

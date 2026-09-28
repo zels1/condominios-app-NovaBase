@@ -27,12 +27,12 @@ class StorageError(Exception):
     """Erro com mensagem pronta a mostrar ao utilizador."""
 
 
-def _config():
+def _config(what: str = "O envio de ficheiros"):
     url = os.environ.get("SUPABASE_URL", "").rstrip("/")
     key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
     if not url or not key:
         raise StorageError(
-            "O envio de ficheiros ainda não está configurado no servidor: falta definir "
+            f"{what} ainda não está configurado no servidor: falta definir "
             "SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no Render."
         )
     return url, key
@@ -156,3 +156,25 @@ def update_auth_email(supabase_user_id: str, new_email: str) -> None:
     if status == 422 or "already" in text.lower():
         raise StorageError("Já existe outra conta de login com esse email.")
     raise StorageError(f"Não foi possível alterar o email de login (erro {status}: {text[:200]}).")
+
+
+def invite_user(email: str, full_name: str = None, redirect_to: str = None) -> str:
+    """Envia ao condómino o email de convite do Supabase (link para criar a palavra-passe).
+    Se a pessoa já tiver conta de login, envia antes o email de 'definir nova palavra-passe'.
+    Devolve 'invited' ou 'reset_sent'."""
+    url, key = _config("O envio de convites por email")
+    query = f"?redirect_to={urllib.parse.quote(redirect_to, safe='')}" if redirect_to else ""
+    payload = json.dumps({"email": email, "data": {"full_name": full_name} if full_name else {}}).encode()
+    status, body = _request("POST", f"{url}/auth/v1/invite{query}", key, payload)
+    if status in (200, 201):
+        return "invited"
+    text = body.decode(errors="ignore")
+    if status == 422 or "already" in text.lower() or "registered" in text.lower():
+        status2, body2 = _request("POST", f"{url}/auth/v1/recover{query}", key, json.dumps({"email": email}).encode())
+        if status2 in (200, 201, 204):
+            return "reset_sent"
+        text = body2.decode(errors="ignore")
+        status = status2
+    if status == 429 or "rate limit" in text.lower():
+        raise StorageError("Foram enviados demasiados emails num curto espaço de tempo (limite do Supabase). Tenta daqui a uma hora ou configura um servidor de email (SMTP) no Supabase.")
+    raise StorageError(f"Não foi possível enviar o convite (erro {status}: {text[:200]}).")

@@ -5,6 +5,7 @@ import { QuotaStatusBadge } from '../components/StatusBadge'
 import ExpenseChart from '../components/ExpenseChart'
 import { useSort, SortTh } from '../components/SortableTable'
 import { Link } from 'react-router-dom'
+import { QuotaTitle, quotaMonth } from '../components/QuotaDetail'
 
 const STATUS_ORDER = { overdue: 0, partially_paid: 1, pending: 2, paid: 3, waived: 4 }
 const COLUMNS = {
@@ -30,7 +31,7 @@ export default function OwnerHome() {
   async function downloadReceipt(q) {
     setDownloading(q.id); setError(null)
     try {
-      await api.download(`/condominiums/${selectedCondo.id}/quotas/${q.id}/receipt`, 'recibo.pdf')
+      await api.download(`/condominiums/${selectedCondo.id}/quotas/${q.id}/receipt`, Number(q.amount_paid) > 0 ? 'recibo.pdf' : 'aviso.pdf')
     } catch (err) { setError(err.message) }
     setDownloading(null)
   }
@@ -92,29 +93,34 @@ export default function OwnerHome() {
           <table>
             <thead><tr>
               <SortTh label="Fração" sortKey="fraction" sort={sort} onSort={toggle} />
-              <SortTh label="Mês" sortKey="month" sort={sort} onSort={toggle} />
+              <SortTh label="Referente a" sortKey="month" sort={sort} onSort={toggle} />
               <SortTh label="Vencimento" sortKey="due" sort={sort} onSort={toggle} />
-              <SortTh label="Base" sortKey="base" sort={sort} onSort={toggle} />
+              <SortTh label="Valor" sortKey="base" sort={sort} onSort={toggle} />
               <SortTh label="Juro" sortKey="fee" sort={sort} onSort={toggle} />
               <SortTh label="Por pagar" sortKey="total" sort={sort} onSort={toggle} />
               <SortTh label="Estado" sortKey="status" sort={sort} onSort={toggle} />
-              <th><span className="visually-hidden">Recibo</span></th>
+              <th><span className="visually-hidden">Recibo ou aviso</span></th>
             </tr></thead>
             <tbody>
               {sorted.map((q) => (
                 <tr key={q.id}>
                   <td>{q.fraction_identifier}</td>
-                  <td>{new Date(q.reference_month).toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' })}</td>
+                  <td><QuotaTitle quota={q} /></td>
                   <td>{new Date(q.due_date).toLocaleDateString('pt-PT')}</td>
                   <td>{money(q.base_amount)}</td>
                   <td>{q.late_fee_amount > 0 ? money(q.late_fee_amount) : '—'}</td>
                   <td><strong>{money(q.total_due)}</strong></td>
                   <td><QuotaStatusBadge status={q.status} /></td>
                   <td>
-                    {Number(q.amount_paid) > 0 && (
+                    {Number(q.amount_paid) > 0 ? (
                       <button type="button" className="btn secondary small" disabled={downloading === q.id}
-                        onClick={() => downloadReceipt(q)} aria-label={`Descarregar recibo de ${new Date(q.reference_month).toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' })}`}>
+                        onClick={() => downloadReceipt(q)} aria-label={`Descarregar recibo de ${quotaMonth(q)}`}>
                         {downloading === q.id ? 'A gerar…' : '⬇ Recibo'}
+                      </button>
+                    ) : q.status !== 'waived' && (
+                      <button type="button" className="btn secondary small" disabled={downloading === q.id}
+                        onClick={() => downloadReceipt(q)} title="Aviso de cobrança com a quota discriminada" aria-label={`Descarregar aviso de cobrança de ${quotaMonth(q)}`}>
+                        {downloading === q.id ? 'A gerar…' : '⬇ Aviso'}
                       </button>
                     )}
                   </td>

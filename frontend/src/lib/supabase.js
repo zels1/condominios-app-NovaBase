@@ -12,7 +12,7 @@ if (!url || !anonKey) {
 // ao endereço "#...type=recovery" (ou um erro, se o link expirou). Guardamos isso já,
 // porque o cliente do Supabase limpa o endereço logo a seguir.
 function readAuthRedirect() {
-  if (typeof window === 'undefined') return { isRecovery: false, error: null }
+  if (typeof window === 'undefined') return { isRecovery: false, isInvite: false, error: null }
   const params = new URLSearchParams(window.location.hash.replace(/^#/, '') + '&' + window.location.search.replace(/^\?/, ''))
   const errorCode = params.get('error_code') || params.get('error')
   let error = null
@@ -21,7 +21,9 @@ function readAuthRedirect() {
       ? 'O link de recuperação expirou ou já foi usado. Pede um novo link.'
       : (params.get('error_description') || 'O link de recuperação não é válido.').replace(/\+/g, ' ')
   }
-  return { isRecovery: params.get('type') === 'recovery', error }
+  // convite enviado pelo administrador: a pessoa entra pelo link e define já a palavra-passe
+  const isInvite = params.get('type') === 'invite'
+  return { isRecovery: params.get('type') === 'recovery' || isInvite, isInvite, error }
 }
 export const authRedirect = readAuthRedirect()
 

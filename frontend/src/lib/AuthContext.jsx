@@ -79,6 +79,7 @@ export function AuthProvider({ children }) {
       ),
     signOut: () => { setRecovery(false); return supabase.auth.signOut() },
     recovery,
+    isInvite: authRedirect.isInvite,
     linkError: authRedirect.error,
     // Envia o email com o link para definir uma nova palavra-passe
     requestPasswordReset: (email) =>

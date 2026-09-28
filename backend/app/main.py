@@ -13,7 +13,7 @@ from .models import Base
 from .routers import (
     condominiums, fractions, budgets, quotas, payments,
     latefees, reminders, suppliers, maintenance, assemblies,
-    documents, dashboard, users, owners, account, maintenance_tasks,
+    documents, dashboard, users, owners, account, maintenance_tasks, charges,
 )
 
 app = FastAPI(title="Gestão de Condomínios API", version="1.0.0")
@@ -52,7 +52,7 @@ for router in (
     condominiums.router, fractions.router, budgets.router, quotas.router, payments.router,
     latefees.router, reminders.router, suppliers.router, maintenance.router, assemblies.router,
     documents.router, dashboard.router, dashboard.overview_router, users.router, owners.router,
-    account.router, maintenance_tasks.router, owners.platform_router,
+    account.router, maintenance_tasks.router, owners.platform_router, charges.router,
 ):
     app.include_router(router)
 
@@ -103,3 +103,13 @@ def on_startup():
         conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS external_management_name VARCHAR"))
         conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS external_management_contact VARCHAR"))
         conn.execute(text("ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS max_upload_mb INTEGER DEFAULT 5"))
+
+        # Rubricas das quotas: tipo de quota e descrição; permitir várias quotas
+        # extraordinárias no mesmo mês (a regra "uma por mês" passa a valer só para a mensal)
+        conn.execute(text("ALTER TABLE quotas ADD COLUMN IF NOT EXISTS kind VARCHAR NOT NULL DEFAULT 'regular'"))
+        conn.execute(text("ALTER TABLE quotas ADD COLUMN IF NOT EXISTS description VARCHAR"))
+        conn.execute(text("ALTER TABLE quotas DROP CONSTRAINT IF EXISTS uq_quota_fraction_month"))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_quota_regular_month ON quotas (fraction_id, reference_month) "
+            "WHERE kind = 'regular'"
+        ))

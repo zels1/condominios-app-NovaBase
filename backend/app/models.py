@@ -7,6 +7,7 @@ import uuid
 import enum
 from datetime import datetime, date
 from sqlalchemy import (
+    text,
     Column, String, Integer, Numeric, Boolean, Date, DateTime, Text,
     ForeignKey, Enum, UniqueConstraint, CheckConstraint, Index
 )
@@ -180,13 +181,20 @@ class Quota(Base):
     late_fee_applied_at = Column(DateTime, nullable=True)
     late_fee_waived = Column(Boolean, default=False)
     generated_at = Column(DateTime, default=datetime.utcnow)
+    # regular = quota mensal (ordinária + fundo de reserva + outras rubricas periódicas);
+    # extraordinary = quota lançada à parte (obras, despesa pontual…)
+    kind = Column(String, default="regular", nullable=False)
+    description = Column(String, nullable=True)
 
     fraction = relationship("Fraction", back_populates="quotas")
     payments = relationship("Payment", back_populates="quota", cascade="all, delete-orphan")
     reminders_sent = relationship("ReminderLog", back_populates="quota", cascade="all, delete-orphan")
+    lines = relationship("QuotaLine", back_populates="quota", cascade="all, delete-orphan", order_by="QuotaLine.position")
 
     __table_args__ = (
-        UniqueConstraint("fraction_id", "reference_month", name="uq_quota_fraction_month"),
+        # uma única quota mensal por fração e mês; as extraordinárias podem ser várias
+        Index("uq_quota_regular_month", "fraction_id", "reference_month", unique=True,
+              postgresql_where=text("kind = 'regular'")),
         Index("ix_quota_status", "status"),
         Index("ix_quota_due_date", "due_date"),
     )
@@ -194,6 +202,53 @@ class Quota(Base):
     @property
     def total_due(self):
         return float(self.base_amount) + float(self.late_fee_amount) - float(self.amount_paid)
+
+
+class ChargeType(Base):
+    """Rubrica de cobrança configurável por condomínio: quota ordinária, fundo comum de
+    reserva, quota extraordinária ou outra (ex: seguro, elevador…)."""
+    __tablename__ = "charge_types"
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    condominium_id = Column(UUID(as_uuid=False), ForeignKey("condominiums.id"), nullable=False)
+    name = Column(String, nullable=False)
+    category = Column(String, default="outra")  # ordinaria | fundo_reserva | extraordinaria | outra
+    # como se calcula o valor de cada fração:
+    #   orcamento   — orçamento anual ÷ 12, por permilagem (value não usado)
+    #   percentagem — value % das rubricas ordinárias da fração (ex: fundo de reserva 10%)
+    #   permilagem  — value € (por mês, ou total se for pontual) repartido por permilagem
+    #   igual       — value € repartido em partes iguais pelas frações
+    #   fixo        — value € por fração
+    method = Column(String, default="permilagem")
+    value = Column(Numeric(12, 2), default=0)
+    recurring = Column(Boolean, default=True)  # entra na quota mensal; senão é lançada à parte
+    active = Column(Boolean, default=True)
+    position = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class FractionCharge(Base):
+    """Configuração individual de uma rubrica para uma fração: isenta, ou valor próprio."""
+    __tablename__ = "fraction_charges"
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    fraction_id = Column(UUID(as_uuid=False), ForeignKey("fractions.id"), nullable=False)
+    charge_type_id = Column(UUID(as_uuid=False), ForeignKey("charge_types.id"), nullable=False)
+    mode = Column(String, default="isento")  # isento | valor
+    amount = Column(Numeric(10, 2), nullable=True)
+    __table_args__ = (UniqueConstraint("fraction_id", "charge_type_id", name="uq_fraction_charge"),)
+
+
+class QuotaLine(Base):
+    """Discriminação de uma quota por rubrica (aparece no recibo)."""
+    __tablename__ = "quota_lines"
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    quota_id = Column(UUID(as_uuid=False), ForeignKey("quotas.id"), nullable=False)
+    charge_type_id = Column(UUID(as_uuid=False), ForeignKey("charge_types.id"), nullable=True)
+    name = Column(String, nullable=False)
+    category = Column(String, default="outra")
+    amount = Column(Numeric(10, 2), nullable=False)
+    position = Column(Integer, default=0)
+
+    quota = relationship("Quota", back_populates="lines")
 
 
 class Payment(Base):

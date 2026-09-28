@@ -143,14 +143,13 @@ def quota_receipt(
     if not is_admin and quota.fraction_id not in get_user_fraction_ids(db, user):
         raise HTTPException(403, "Sem acesso a esta quota.")
     payments = db.query(models.Payment).filter(models.Payment.quota_id == quota.id).order_by(models.Payment.paid_at).all()
-    if not payments:
-        raise HTTPException(400, "Esta quota ainda não tem pagamentos, por isso não há recibo.")
     condo = db.query(models.Condominium).filter(models.Condominium.id == condominium_id).first()
     fraction = quota.fraction
     primary = next((o for o in fraction.owners if o.is_primary_contact and o.user), None) \
         or next((o for o in fraction.owners if o.user), None)
     owner = user if (not is_admin and any(o.user_id == user.id for o in fraction.owners)) else (primary.user if primary else None)
     pdf = build_quota_receipt(condo, fraction, owner, quota, payments)
-    filename = f"recibo-{receipt_number(quota)}-{fraction.identifier}.pdf".replace(" ", "").replace("/", "-").replace("º", "")
+    prefix = "recibo" if payments else "aviso"
+    filename = f"{prefix}-{receipt_number(quota)}-{fraction.identifier}.pdf".replace(" ", "").replace("/", "-").replace("º", "")
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})

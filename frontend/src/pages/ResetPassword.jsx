@@ -4,7 +4,7 @@ import DomvusLogo from '../components/DomvusLogo'
 
 // Ecrã mostrado quando a pessoa abre o link "recuperar palavra-passe" recebido por email.
 export default function ResetPassword() {
-  const { user, updatePassword, signOut } = useAuth()
+  const { user, updatePassword, signOut, isInvite } = useAuth()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [show, setShow] = useState(false)
@@ -31,9 +31,11 @@ export default function ResetPassword() {
     <div className="auth-screen">
       <div className="card auth-card">
         <div className="auth-brand"><DomvusLogo size={36} stacked /></div>
-        <h1>Nova palavra-passe</h1>
+        <h1>{isInvite ? 'Bem-vindo(a) à Domvus' : 'Nova palavra-passe'}</h1>
         <p style={{ color: 'var(--text-muted)' }}>
-          Escolhe uma nova palavra-passe para <strong>{user?.email}</strong>.
+          {isInvite
+            ? <>Foste convidado(a) pelo administrador do teu condomínio. Escolhe uma palavra-passe para <strong>{user?.email}</strong> — é com ela que vais entrar na aplicação.</>
+            : <>Escolhe uma nova palavra-passe para <strong>{user?.email}</strong>.</>}
         </p>
         {error && <div className="msg error" style={{ marginBottom: '1em' }}>{error}</div>}
         <form onSubmit={handleSubmit} className="stack">

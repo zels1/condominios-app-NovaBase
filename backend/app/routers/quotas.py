@@ -44,6 +44,7 @@ def list_quotas(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
+    require_condo_member(db, user, condominium_id)
     q = (
         db.query(models.Quota)
         .join(models.Fraction)
@@ -56,7 +57,7 @@ def list_quotas(
         q = q.filter(models.Quota.fraction_id == fraction_id)
     if status:
         q = q.filter(models.Quota.status == status)
-    quotas = q.order_by(models.Quota.reference_month.desc()).all()
+    quotas = q.order_by(models.Quota.reference_month.desc(), models.Quota.kind.desc()).all()
 
     out = []
     for quota in quotas:
@@ -103,9 +104,36 @@ def waive_quota(
     db: Session = Depends(get_db),
     user: models.User = Depends(require_condo_admin),
 ):
-    quota = db.query(models.Quota).filter(models.Quota.id == quota_id).first()
+    quota = (
+        db.query(models.Quota).join(models.Fraction)
+        .filter(models.Quota.id == quota_id, models.Fraction.condominium_id == condominium_id)
+        .first()
+    )
     if not quota:
         raise HTTPException(404, "Quota não encontrada.")
     quota.status = models.QuotaStatus.waived
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/{quota_id}")
+def delete_quota(
+    condominium_id: str,
+    quota_id: str,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_condo_admin),
+):
+    """Apaga uma quota lançada por engano (só se ainda não tiver pagamentos)."""
+    quota = (
+        db.query(models.Quota).join(models.Fraction)
+        .filter(models.Quota.id == quota_id, models.Fraction.condominium_id == condominium_id)
+        .first()
+    )
+    if not quota:
+        raise HTTPException(404, "Quota não encontrada.")
+    if float(quota.amount_paid or 0) > 0 or quota.payments:
+        raise HTTPException(409, "Esta quota já tem pagamentos registados: não pode ser apagada.")
+    db.query(models.ReminderLog).filter(models.ReminderLog.quota_id == quota.id).delete(synchronize_session=False)
+    db.delete(quota)
     db.commit()
     return {"ok": True}

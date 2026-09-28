@@ -12,6 +12,7 @@ from ..auth import get_current_user, require_condo_admin, require_condo_member, 
 from ..services.storage import signed_url, delete_file, StorageError, STORAGE_PREFIX, DOCUMENT_BUCKET
 from ..services.purge import delete_fraction, fraction_summary, delete_orphan_owners
 from ..services.fraction_ids import find_equivalent
+from ..services.ownership import rebalance_on_add, normalize
 
 
 def _get_fraction(db: Session, condominium_id: str, fraction_id: str) -> models.Fraction:
@@ -248,14 +249,20 @@ def add_owner(
         if not owner_user:
             raise HTTPException(404, "Utilizador não encontrado.")
 
+    if owner_user_id and db.query(models.FractionOwner).filter(
+        models.FractionOwner.fraction_id == fraction_id, models.FractionOwner.user_id == owner_user_id
+    ).first():
+        raise HTTPException(409, "Esse condómino já está associado a esta fração.")
     link = models.FractionOwner(
         fraction_id=fraction_id,
         user_id=owner_user_id,
         invited_email=invited_email,
-        ownership_share=payload.ownership_share,
+        ownership_share=1,
         is_primary_contact=payload.is_primary_contact,
     )
     db.add(link)
+    db.flush()
+    rebalance_on_add(db, fraction_id, link, payload.ownership_share)
     db.commit()
     db.refresh(link)
     return link
@@ -289,6 +296,7 @@ def remove_owner(
     user_id = link.user_id
     db.delete(link)
     db.flush()
+    normalize(db, fraction_id)
     delete_orphan_owners(db, [user_id])
     db.commit()
     return {"ok": True}

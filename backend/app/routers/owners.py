@@ -1,5 +1,6 @@
 """Diretório de condóminos de um condomínio — a 'ficha' de cada um, vista do admin.
 Junta os dados do User com as frações a que está ligado (via FractionOwner)."""
+import os
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,7 +10,8 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..auth import require_condo_admin, require_admin
-from ..services.storage import update_auth_email, StorageError
+from ..services.storage import update_auth_email, invite_user, StorageError
+from ..services.ownership import rebalance_on_add, set_share, normalize
 from ..services.purge import remove_owner_from_condo, delete_orphan_owners
 
 router = APIRouter(prefix="/condominiums/{condominium_id}/owners", tags=["Condóminos"])
@@ -48,6 +50,15 @@ def _user_condo_ids(db: Session, user_id: str):
 def _admin_can_see(db: Session, admin: models.User, user_id: str) -> bool:
     """Os administradores têm acesso a todos os condóminos registados na plataforma."""
     return admin.role in (models.UserRole.admin, models.UserRole.super_admin)
+
+
+def _send_invite(user: models.User):
+    """Envia o convite; devolve (estado, erro). Nunca rebenta o pedido principal."""
+    redirect = (os.environ.get("FRONTEND_URL") or "").rstrip("/") or None
+    try:
+        return invite_user(user.email, user.full_name, (redirect + "/") if redirect else None), None
+    except StorageError as e:
+        return None, str(e)
 
 
 def _fraction_link(link: models.FractionOwner, fraction: models.Fraction) -> schemas.OwnerFractionLink:
@@ -150,13 +161,19 @@ def add_owner(
             raise HTTPException(409, f"{user.full_name} já está associado à fração {fraction.identifier}.")
 
     link = models.FractionOwner(
-        fraction_id=fraction.id, user_id=user.id,
-        ownership_share=payload.ownership_share, is_primary_contact=payload.is_primary_contact,
+        fraction_id=fraction.id, user_id=user.id, ownership_share=1, is_primary_contact=payload.is_primary_contact,
     )
     db.add(link)
+    db.flush()
+    rebalance_on_add(db, fraction.id, link, payload.ownership_share)
     db.commit()
     db.refresh(user)
+    db.refresh(link)
+    invite_status, invite_error = None, None
+    if payload.send_invite:
+        invite_status, invite_error = _send_invite(user)
     return schemas.OwnerDirectoryEntry(
+        invite_status=invite_status, invite_error=invite_error,
         id=user.id, email=user.email, full_name=user.full_name, phone=user.phone,
         landline_phone=user.landline_phone, is_active=user.is_active, has_login=bool(user.supabase_user_id),
         nif=user.nif, correspondence_address=user.correspondence_address, iban=user.iban, notes=user.notes,
@@ -188,13 +205,75 @@ def assign_fraction(
     if already:
         raise HTTPException(409, f"{user.full_name} já está associado à fração {fraction.identifier}.")
     link = models.FractionOwner(
-        fraction_id=fraction.id, user_id=user.id,
-        ownership_share=payload.ownership_share, is_primary_contact=payload.is_primary_contact,
+        fraction_id=fraction.id, user_id=user.id, ownership_share=1, is_primary_contact=payload.is_primary_contact,
     )
     db.add(link)
+    db.flush()
+    rebalance_on_add(db, fraction.id, link, payload.ownership_share)
     db.commit()
     db.refresh(link)
     return _fraction_link(link, fraction)
+
+
+@router.put("/{user_id}/fractions/{link_id}", response_model=schemas.OwnerFractionLink)
+def update_fraction_link(
+    condominium_id: str,
+    user_id: str,
+    link_id: str,
+    payload: schemas.OwnerFractionAssign,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_condo_admin),
+):
+    """Na ficha do condómino: trocar a fração associada (ex: registada por engano) e/ou
+    alterar a quota de propriedade e o contacto principal."""
+    link = (
+        db.query(models.FractionOwner)
+        .join(models.Fraction, models.FractionOwner.fraction_id == models.Fraction.id)
+        .filter(models.FractionOwner.id == link_id, models.FractionOwner.user_id == user_id,
+                models.Fraction.condominium_id == condominium_id)
+        .first()
+    )
+    if not link:
+        raise HTTPException(404, "Associação não encontrada neste condomínio.")
+    new_fraction = _fraction_in_condo(db, condominium_id, payload.fraction_id)
+    old_fraction_id = link.fraction_id
+    link.is_primary_contact = payload.is_primary_contact
+    if new_fraction.id != old_fraction_id:
+        clash = db.query(models.FractionOwner).filter(
+            models.FractionOwner.fraction_id == new_fraction.id, models.FractionOwner.user_id == user_id
+        ).first()
+        if clash:
+            raise HTTPException(409, f"Este condómino já está associado à fração {new_fraction.identifier}.")
+        link.fraction_id = new_fraction.id
+        link.ownership_share = 1
+        db.flush()
+        normalize(db, old_fraction_id)  # os outros donos da fração antiga ficam com a parte dele
+        rebalance_on_add(db, new_fraction.id, link, payload.ownership_share)
+    elif payload.ownership_share is not None:
+        db.flush()
+        set_share(db, new_fraction.id, link, payload.ownership_share)
+    if payload.is_primary_contact:
+        normalize(db, new_fraction.id)
+    db.commit()
+    db.refresh(link)
+    return _fraction_link(link, new_fraction)
+
+
+@router.post("/{user_id}/invite")
+def send_invite(
+    condominium_id: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_condo_admin),
+):
+    """(Re)envia ao condómino o convite por email para criar a palavra-passe e entrar na app."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user or user.role != models.UserRole.owner:
+        raise HTTPException(404, "Condómino não encontrado.")
+    status, error = _send_invite(user)
+    if error:
+        raise HTTPException(502, error)
+    return {"ok": True, "status": status, "email": user.email}
 
 
 @router.put("/pending/{link_id}", response_model=schemas.UserOut)

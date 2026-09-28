@@ -4,6 +4,8 @@ import { api } from '../lib/api'
 import { useCondo } from '../lib/CondoContext'
 import { QuotaStatusBadge } from '../components/StatusBadge'
 import { useSort, SortTh } from '../components/SortableTable'
+import { QuotaTitle, linesText } from '../components/QuotaDetail'
+import { ChargeTypesPanel, ExtraQuotaCard, MonthPreview } from './QuotaCharges'
 
 const STATUS_ORDER = { overdue: 0, partially_paid: 1, pending: 2, paid: 3, waived: 4 }
 const QUOTA_COLUMNS = {
@@ -38,6 +40,8 @@ export default function AdminBudgetsQuotas() {
   const [error, setError] = useState(null)
   const [feeRun, setFeeRun] = useState(null)
   const [feeRunBusy, setFeeRunBusy] = useState(false)
+  const [fractions, setFractions] = useState([])
+  const [showPreview, setShowPreview] = useState(false)
 
   async function runLateFees() {
     if (!window.confirm('Aplicar juros de mora a todas as quotas em atraso que já passaram o período de tolerância (e ainda não têm juro)?')) return
@@ -53,7 +57,11 @@ export default function AdminBudgetsQuotas() {
   async function loadBudgets() { setBudgets(await api.get(`/condominiums/${selectedCondo.id}/budgets`)) }
   async function loadQuotas() { setQuotas(await api.get(`/condominiums/${selectedCondo.id}/quotas`)) }
 
-  useEffect(() => { if (selectedCondo) { loadBudgets(); loadQuotas() } }, [selectedCondo])
+  useEffect(() => {
+    if (!selectedCondo) return
+    loadBudgets(); loadQuotas()
+    api.get(`/condominiums/${selectedCondo.id}/fractions`).then(setFractions).catch(() => {})
+  }, [selectedCondo])
   const qSort = useSort(quotas, QUOTA_COLUMNS, 'month', 'desc')
   const bSort = useSort(budgets, BUDGET_COLUMNS, 'year', 'desc')
 
@@ -91,8 +99,11 @@ export default function AdminBudgetsQuotas() {
       <h1>Orçamento e Quotas</h1>
       <div className="tabs">
         <button className={tab === 'quotas' ? 'active' : ''} onClick={() => setTab('quotas')}>Quotas</button>
+        <button className={tab === 'charges' ? 'active' : ''} onClick={() => setTab('charges')}>Rubricas</button>
         <button className={tab === 'budgets' ? 'active' : ''} onClick={() => setTab('budgets')}>Orçamentos anuais</button>
       </div>
+
+      {tab === 'charges' && <ChargeTypesPanel condoId={selectedCondo.id} fractions={fractions} />}
 
       {tab === 'budgets' && (
         <div className="stack">
@@ -109,7 +120,7 @@ export default function AdminBudgetsQuotas() {
                 <input type="number" step="0.01" value={budgetForm.total_amount} onChange={(e) => setBudgetForm({ ...budgetForm, total_amount: e.target.value })} required />
               </div>
               <div className="field" style={{ width: 160 }}>
-                <label>Fundo de reserva (%)</label>
+                <label>Fundo de reserva (%) por defeito</label>
                 <input type="number" step="0.1" value={budgetForm.reserve_fund_percent} onChange={(e) => setBudgetForm({ ...budgetForm, reserve_fund_percent: e.target.value })} />
               </div>
               <button className="btn" style={{ marginBottom: '.9em' }}>Criar</button>
@@ -140,7 +151,10 @@ export default function AdminBudgetsQuotas() {
         <div className="stack">
           <div className="card">
             <h3>Gerar quotas do mês</h3>
-            <p style={{ color: 'var(--text-muted)' }}>Divide o orçamento anual por 12 e reparte por cada fração de acordo com a sua permilagem.</p>
+            <p style={{ color: 'var(--text-muted)' }}>
+              Cria a quota mensal de cada fração com as rubricas mensais ativas (por defeito: quota ordinária = orçamento anual ÷ 12 por permilagem,
+              e fundo comum de reserva). As rubricas configuram-se no separador <button type="button" className="link-button" onClick={() => setTab('charges')}>Rubricas</button>.
+            </p>
             <div className="row" style={{ alignItems: 'flex-end' }}>
               <div className="field" style={{ width: 160 }}>
                 <label>Mês de referência</label>
@@ -151,7 +165,11 @@ export default function AdminBudgetsQuotas() {
                 <input type="number" min={1} max={28} value={genDueDay} onChange={(e) => setGenDueDay(e.target.value)} />
               </div>
               <button className="btn" style={{ marginBottom: '.9em' }} onClick={() => handleGenerate(false)}>Gerar quotas</button>
+              <button type="button" className="btn secondary" style={{ marginBottom: '.9em' }} onClick={() => setShowPreview((v) => !v)} aria-expanded={showPreview}>
+                {showPreview ? 'Esconder pré-visualização' : 'Pré-visualizar'}
+              </button>
             </div>
+            {showPreview && <MonthPreview condoId={selectedCondo.id} month={genMonth} />}
             {genMsg && (
               <div className={`msg ${genMsg.type === 'error' ? 'error' : genMsg.type === 'warn' ? 'error' : 'success'}`} style={{ marginTop: '.6em' }}>
                 {genMsg.text}
@@ -159,6 +177,8 @@ export default function AdminBudgetsQuotas() {
               </div>
             )}
           </div>
+
+          <ExtraQuotaCard condoId={selectedCondo.id} fractions={fractions} onCreated={loadQuotas} />
 
           <div className="card">
             <div className="row between" style={{ alignItems: 'center', gap: '.6rem', marginBottom: '.6rem' }}>
@@ -176,9 +196,9 @@ export default function AdminBudgetsQuotas() {
                 <thead><tr>
                   <SortTh label="Fração" sortKey="fraction" sort={qSort.sort} onSort={qSort.toggle} />
                   <SortTh label="Proprietário" sortKey="owner" sort={qSort.sort} onSort={qSort.toggle} />
-                  <SortTh label="Mês" sortKey="month" sort={qSort.sort} onSort={qSort.toggle} />
+                  <SortTh label="Referente a" sortKey="month" sort={qSort.sort} onSort={qSort.toggle} />
                   <SortTh label="Vencimento" sortKey="due" sort={qSort.sort} onSort={qSort.toggle} />
-                  <SortTh label="Base" sortKey="base" sort={qSort.sort} onSort={qSort.toggle} />
+                  <SortTh label="Valor" sortKey="base" sort={qSort.sort} onSort={qSort.toggle} />
                   <SortTh label="Juro" sortKey="fee" sort={qSort.sort} onSort={qSort.toggle} />
                   <SortTh label="Em dívida" sortKey="due_amount" sort={qSort.sort} onSort={qSort.toggle} />
                   <SortTh label="Estado" sortKey="status" sort={qSort.sort} onSort={qSort.toggle} />
@@ -219,9 +239,12 @@ function QuotaRow({ quota, condoId, onChanged }) {
       <tr>
         <td>{quota.fraction_identifier}</td>
         <td>{quota.owner_name || '—'}</td>
-        <td>{new Date(quota.reference_month).toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' })}</td>
+        <td style={{ minWidth: 150 }}><QuotaTitle quota={quota} showLines={false} /></td>
         <td>{new Date(quota.due_date).toLocaleDateString('pt-PT')}</td>
-        <td>{money(quota.base_amount)}</td>
+        <td title={linesText(quota) || undefined} style={{ whiteSpace: 'nowrap' }}>
+          {money(quota.base_amount)}
+          {quota.lines && quota.lines.length > 1 && <div className="hint" style={{ fontSize: '.74rem', margin: 0 }}>{quota.lines.length} rubricas</div>}
+        </td>
         <td>
           <button type="button" className={`fee-cell${showFee ? ' open' : ''}`} onClick={() => { setShowFee(!showFee); setShowPay(false) }}
             aria-expanded={showFee} title="Ver e gerir o juro de mora desta quota">
@@ -236,11 +259,16 @@ function QuotaRow({ quota, condoId, onChanged }) {
             {quota.status !== 'paid' && quota.status !== 'waived' && (
               <button className="btn small" onClick={() => { setShowPay(!showPay); setShowFee(false) }}>Registar pagamento</button>
             )}
-            {Number(quota.amount_paid) > 0 && (
-              <button className="btn secondary small" title="Descarregar recibo (PDF)"
-                onClick={() => api.download(`/condominiums/${condoId}/quotas/${quota.id}/receipt`, 'recibo.pdf').catch((e) => alert(e.message))}>
-                Recibo
-              </button>
+            <button className="btn secondary small" title={Number(quota.amount_paid) > 0 ? 'Descarregar recibo (PDF)' : 'Descarregar aviso de cobrança (PDF), com a quota discriminada'}
+              onClick={() => api.download(`/condominiums/${condoId}/quotas/${quota.id}/receipt`, Number(quota.amount_paid) > 0 ? 'recibo.pdf' : 'aviso.pdf').catch((e) => alert(e.message))}>
+              {Number(quota.amount_paid) > 0 ? 'Recibo' : 'Aviso'}
+            </button>
+            {Number(quota.amount_paid) === 0 && (
+              <button className="btn secondary small" title="Apagar esta quota (lançada por engano)" aria-label="Apagar quota"
+                onClick={async () => {
+                  if (!window.confirm(`Apagar a quota de ${quota.fraction_identifier} (${quota.kind === 'extraordinary' ? quota.description : new Date(quota.reference_month).toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' })})?`)) return
+                  try { await api.del(`/condominiums/${condoId}/quotas/${quota.id}`); await onChanged() } catch (e) { alert(e.message) }
+                }}>✕</button>
             )}
           </div>
         </td>
