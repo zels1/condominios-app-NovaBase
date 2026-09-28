@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from 'react'
 import { api } from '../lib/api'
+import Modal from '../components/Modal'
 
 // Rubricas das quotas: quota ordinária, fundo comum de reserva, quotas extraordinárias e
 // outras rubricas configuráveis — para todas as frações e, se preciso, fração a fração.
@@ -34,7 +35,7 @@ export function describeCharge(ct) {
   }
 }
 
-export function ChargeTypesPanel({ condoId, fractions }) {
+export function ChargeTypesPanel({ condoId, fractions, newSignal = 0 }) {
   const base = `/condominiums/${condoId}/charge-types`
   const [types, setTypes] = useState(null)
   const [overrides, setOverrides] = useState([])
@@ -48,6 +49,7 @@ export function ChargeTypesPanel({ condoId, fractions }) {
     setTypes(t); setOverrides(o)
   }
   useEffect(() => { load().catch((e) => setErr(e.message)) }, [condoId])
+  useEffect(() => { if (newSignal) { setForm({ ...EMPTY }); setMsg(null); setErr(null) } }, [newSignal])
 
   async function save(e) {
     e.preventDefault()
@@ -82,7 +84,7 @@ export function ChargeTypesPanel({ condoId, fractions }) {
       <div className="card">
         <div className="row between" style={{ alignItems: 'center', gap: '.6rem' }}>
           <h3 style={{ margin: 0 }}>Rubricas da quota</h3>
-          {!form && <button className="btn small" onClick={() => { setForm({ ...EMPTY }); setMsg(null); setErr(null) }}>+ Nova rubrica</button>}
+          <button className="btn secondary small" onClick={() => { setForm({ ...EMPTY }); setMsg(null); setErr(null) }}>+ Nova rubrica</button>
         </div>
         <p className="hint">
           As rubricas <strong>mensais</strong> entram na quota de cada mês e aparecem discriminadas no aviso e no recibo.
@@ -93,8 +95,9 @@ export function ChargeTypesPanel({ condoId, fractions }) {
         {err && <div className="msg error" style={{ marginBottom: '.6rem' }}>{err}</div>}
 
         {form && (
-          <form onSubmit={save} className="stack assign-box" style={{ maxWidth: 'none', marginBottom: '1rem' }}>
-            <strong>{form.id ? `Editar "${form.name}"` : 'Nova rubrica'}</strong>
+          <Modal title={form.id ? `Editar rubrica — ${form.name}` : 'Nova rubrica'} onClose={() => setForm(null)}>
+          <form onSubmit={save} className="stack">
+            {err && <div className="msg error">{err}</div>}
             <div className="row form-row">
               <div className="field" style={{ flex: 2, minWidth: 200 }}>
                 <label htmlFor="ct-name">Nome *</label>
@@ -142,11 +145,12 @@ export function ChargeTypesPanel({ condoId, fractions }) {
                 <input type="checkbox" checked={form.active} onChange={set('active')} /> Ativa
               </label>
             )}
-            <div className="row">
-              <button className="btn small">{form.id ? 'Guardar' : 'Criar rubrica'}</button>
+            <div className="modal-actions">
               <button type="button" className="btn secondary small" onClick={() => setForm(null)}>Cancelar</button>
+              <button className="btn small">{form.id ? 'Guardar' : 'Criar rubrica'}</button>
             </div>
           </form>
+          </Modal>
         )}
 
         <div className="table-wrap">
@@ -158,7 +162,9 @@ export function ChargeTypesPanel({ condoId, fractions }) {
                   <tr style={ct.active ? undefined : { opacity: .55 }}>
                     <td>
                       <strong>{ct.name}</strong>
-                      <div className="hint" style={{ fontSize: '.78rem' }}>{CATEGORY_LABELS[ct.category] || ct.category}{!ct.active && ' · desativada'}</div>
+                      {(CATEGORY_LABELS[ct.category] !== ct.name || !ct.active) && (
+                        <div className="hint" style={{ fontSize: '.78rem' }}>{[CATEGORY_LABELS[ct.category] !== ct.name && (CATEGORY_LABELS[ct.category] || ct.category), !ct.active && 'desativada'].filter(Boolean).join(' · ')}</div>
+                      )}
                     </td>
                     <td>{describeCharge(ct)}</td>
                     <td>{ct.recurring ? <span className="badge ok">Mensal</span> : <span className="badge warn">Pontual</span>}</td>
@@ -277,7 +283,7 @@ export function MonthPreview({ condoId, month }) {
   )
 }
 
-export function ExtraQuotaCard({ condoId, fractions, onCreated }) {
+export function ExtraQuotaForm({ condoId, fractions, onCreated, onCancel }) {
   const base = `/condominiums/${condoId}/charge-types`
   const [types, setTypes] = useState([])
   const now = new Date()
@@ -310,18 +316,16 @@ export function ExtraQuotaCard({ condoId, fractions, onCreated }) {
         total_amount: num(form.total_amount), method: form.method,
         reference_month: `${form.month}-01`, due_date: form.due_date, fraction_ids: selected,
       })
-      setMsg({ type: 'success', text: `${r.created} quota(s) lançada(s), no total de ${money(r.total)}.` })
-      setForm((f) => ({ ...f, name: '', total_amount: '' }))
-      await onCreated()
+      await onCreated(`"${label}": ${r.created} quota(s) lançada(s), no total de ${money(r.total)}.`)
+      return
     } catch (e2) { setMsg({ type: 'error', text: e2.message }) }
     setBusy(false)
   }
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
   return (
-    <div className="card">
-      <h3>Lançar quota extraordinária (ou outra rubrica pontual)</h3>
-      <p className="hint">Para obras, reforço do fundo de reserva ou outra despesa aprovada: fica uma quota à parte para cada fração, respeitando as isenções e valores próprios configurados na rubrica.</p>
+    <div>
+      <p className="hint" style={{ marginTop: 0 }}>Para obras, reforço do fundo de reserva ou outra despesa aprovada: fica uma quota à parte para cada fração, respeitando as isenções e valores próprios configurados na rubrica.</p>
       <form onSubmit={submit} className="stack">
         <div className="row form-row">
           <div className="field" style={{ flex: 1, minWidth: 180 }}>
@@ -373,7 +377,10 @@ export function ExtraQuotaCard({ condoId, fractions, onCreated }) {
           </div>
         )}
         {msg && <div className={`msg ${msg.type}`}>{msg.text}</div>}
-        <div><button className="btn small" disabled={busy}>{busy ? 'A lançar…' : 'Lançar quota'}</button></div>
+        <div className="modal-actions">
+          <button type="button" className="btn secondary small" onClick={onCancel}>Cancelar</button>
+          <button className="btn small" disabled={busy}>{busy ? 'A lançar…' : 'Lançar quota'}</button>
+        </div>
       </form>
     </div>
   )
