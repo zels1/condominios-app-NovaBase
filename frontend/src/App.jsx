@@ -17,6 +17,7 @@ import AdminSuppliers from './pages/AdminSuppliers'
 import Maintenance from './pages/Maintenance'
 import Occurrences from './pages/Occurrences'
 import AdminOverview from './pages/AdminOverview'
+import Backup from './pages/Backup'
 import Assemblies from './pages/Assemblies'
 import Documents from './pages/Documents'
 import OwnerHome from './pages/OwnerHome'
@@ -69,6 +70,7 @@ export default function App() {
               <Route path="/assembleias" element={<Assemblies />} />
               <Route path="/documentos" element={<Documents />} />
               <Route path="/conta" element={<AccountStatement />} />
+              <Route path="/copia-seguranca" element={<Backup />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>

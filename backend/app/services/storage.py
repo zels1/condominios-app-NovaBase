@@ -178,3 +178,21 @@ def invite_user(email: str, full_name: str = None, redirect_to: str = None) -> s
     if status == 429 or "rate limit" in text.lower():
         raise StorageError("Foram enviados demasiados emails num curto espaço de tempo (limite do Supabase). Tenta daqui a uma hora ou configura um servidor de email (SMTP) no Supabase.")
     raise StorageError(f"Não foi possível enviar o convite (erro {status}: {text[:200]}).")
+
+
+def download_file(ref_or_url: str):
+    """Descarrega um ficheiro do Storage (para as cópias de segurança).
+    Aceita uma referência privada sb://bucket/caminho ou o URL público de uma foto.
+    Devolve (caminho_no_zip, bytes)."""
+    url, key = _config("O acesso aos ficheiros")
+    if is_private_ref(ref_or_url):
+        bucket, path = _split_ref(ref_or_url)
+    else:
+        marker = "/storage/v1/object/public/"
+        if marker not in ref_or_url:
+            raise StorageError("Ficheiro externo (não está no Storage da aplicação).")
+        bucket, _, path = ref_or_url.split(marker, 1)[1].partition("/")
+    status, body = _request("GET", f"{url}/storage/v1/object/{bucket}/{_quote_path(path)}", key)
+    if status != 200:
+        raise StorageError(f"erro {status}")
+    return f"{bucket}/{path}", body

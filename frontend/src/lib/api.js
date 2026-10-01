@@ -84,6 +84,20 @@ async function download(path, fallbackName = 'ficheiro') {
   setTimeout(() => URL.revokeObjectURL(url), 10000)
 }
 
+// Vai buscar um ficheiro à API e devolve-o (sem o guardar): { blob, filename }
+async function fetchFile(path, fallbackName = 'ficheiro') {
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  const res = await fetch(`${BASE_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  if (!res.ok) {
+    let detail = res.statusText
+    try { detail = (await res.json()).detail || detail } catch { /* sem JSON */ }
+    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+  }
+  const match = /filename="?([^";]+)"?/i.exec(res.headers.get('content-disposition') || '')
+  return { blob: await res.blob(), filename: match ? match[1] : fallbackName }
+}
+
 // Abre um ficheiro privado: pede à API um link temporário e abre-o num separador novo.
 // A janela é aberta logo no clique (senão o browser bloqueia-a como pop-up).
 async function openFile(path) {
@@ -105,5 +119,6 @@ export const api = {
   del: (path) => request(path, { method: 'DELETE' }),
   upload,
   download,
+  fetchFile,
   openFile,
 }

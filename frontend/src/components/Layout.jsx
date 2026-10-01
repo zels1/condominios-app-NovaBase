@@ -35,6 +35,12 @@ const ADMIN_MENU = [
       { to: '/documentos', label: 'Documentos' },
     ],
   },
+  {
+    title: 'Administração',
+    links: [
+      { to: '/copia-seguranca', label: 'Cópia de segurança' },
+    ],
+  },
 ]
 
 const OWNER_MENU = [
