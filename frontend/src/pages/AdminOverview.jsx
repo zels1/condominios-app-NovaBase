@@ -141,7 +141,7 @@ export default function AdminOverview() {
                         <div className="hint" style={{ fontSize: '.8rem' }}>{[r.city, `${r.owners} condómino(s)`].filter(Boolean).join(' · ')}</div>
                       </td>
                       <td>{r.fractions}</td>
-                      <td style={{ color: r.total_overdue_amount > 0 ? 'var(--danger)' : undefined, fontWeight: r.total_overdue_amount > 0 ? 650 : undefined }}>
+                      <td style={{ color: r.total_overdue_amount > 0 ? 'var(--danger)' : undefined, fontWeight: r.total_overdue_amount > 0 ? 600 : undefined }}>
                         {r.total_overdue_amount > 0 ? money(r.total_overdue_amount) : '—'}
                       </td>
                       <td>{r.this_month_expected > 0 ? `${money(r.this_month_collected)} (${p}%)` : '—'}</td>

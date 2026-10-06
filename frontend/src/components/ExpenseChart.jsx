@@ -46,7 +46,7 @@ export default function ExpenseChart({ expenses }) {
     <div className="row" style={{ gap: '1.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Distribuição das despesas por categoria">
         {arcs}
-        <text x={cx} y={cy - 4} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--text)">{money(total)}</text>
+        <text x={cx} y={cy - 4} textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text)">{money(total)}</text>
         <text x={cx} y={cy + 14} textAnchor="middle" fontSize="10" fill="var(--text-muted)">total gasto</text>
       </svg>
       <div className="stack" style={{ gap: '.5rem', flex: 1, minWidth: 180 }}>

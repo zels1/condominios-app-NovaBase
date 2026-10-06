@@ -3,6 +3,7 @@ import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useCondo } from '../lib/CondoContext'
 import DomvusLogo from './DomvusLogo'
+import logoUrl from '../assets/domvus-logo.png'
 import PrivacyNotice from './PrivacyNotice'
 import { POLICY_VERSION } from '../lib/privacy'
 
@@ -103,7 +104,7 @@ export default function Layout() {
     <div className="app-shell">
       <aside className={`sidebar${menuOpen ? ' open' : ''}`}>
         <div className="sidebar-top">
-          <NavLink to="/" className="brand" aria-label="Domvus — início"><DomvusLogo size={30} /></NavLink>
+          <NavLink to="/" className="brand" aria-label="Domvus — início"><img src={logoUrl} alt="Domvus — Gestão de Condomínios" className="brand-logo" /></NavLink>
           <button
             type="button"
             className="menu-toggle"

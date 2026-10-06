@@ -69,7 +69,7 @@ export default function AccountStatement() {
             </div>
             <div className="card stat">
               <span className="label">Receitas (quotas recebidas)</span>
-              <span className="value" style={{ color: 'var(--primary)' }}>{money(data.total_received)}</span>
+              <span className="value income-value">{money(data.total_received)}</span>
               {data.budget_total != null && <span className="hint" style={{ margin: 0 }}>Orçamento anual: {money(data.budget_total)}</span>}
             </div>
             <div className="card stat">
@@ -139,10 +139,10 @@ export default function AccountStatement() {
                   {mv.sorted.map((m, i) => (
                     <tr key={`${m.date}-${i}-${m.description}`}>
                       <td style={{ whiteSpace: 'nowrap' }}>{new Date(m.date).toLocaleDateString('pt-PT')}</td>
-                      <td><span className={`badge ${m.type === 'receita' ? 'ok' : 'danger'}`}>{m.type === 'receita' ? 'Receita' : 'Despesa'}</span></td>
+                      <td><span className={`badge ${m.type === 'receita' ? 'income' : 'danger'}`}>{m.type === 'receita' ? 'Receita' : 'Despesa'}</span></td>
                       <td>{m.category}</td>
                       <td>{m.description}{m.supplier ? <span className="hint"> · {m.supplier}</span> : null}</td>
-                      <td className="num" style={{ color: m.amount < 0 ? 'var(--danger)' : 'var(--primary)' }}>{signed(m.amount)}</td>
+                      <td className="num" style={{ color: m.amount < 0 ? 'var(--danger)' : 'var(--income)' }}>{signed(m.amount)}</td>
                       <td className="num">{money(m.balance)}</td>
                     </tr>
                   ))}

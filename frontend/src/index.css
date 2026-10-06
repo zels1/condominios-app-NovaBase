@@ -7,6 +7,8 @@
   --primary: #262627;
   --primary-dark: #0f0f10;
   --primary-soft: #ececed;
+  --income: #77CE91;
+  --income-soft: #e4f5e9;
   --danger: #c0392b;
   --danger-soft: #fbeae7;
   --warning: #b8860b;
@@ -123,7 +125,7 @@ tr:last-child td { border-bottom: none; }
 .empty { text-align: center; padding: 2.5rem 1rem; color: var(--text-muted); }
 
 .stat { display: flex; flex-direction: column; gap: .2rem; }
-.stat .value { font-size: 1.6rem; font-weight: 750; }
+.stat .value { font-size: 1.6rem; font-weight: 600; }
 .stat .label { color: var(--text-muted); font-size: .82rem; }
 
 .auth-screen {
@@ -266,12 +268,12 @@ tr:last-child td { border-bottom: none; }
 td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .month-bars { width: 32%; min-width: 120px; }
 .month-bars .bar { display: block; height: 7px; border-radius: 4px; margin: 2px 0; min-width: 0; }
-.month-bars .bar.in { background: var(--primary); }
+.month-bars .bar.in { background: var(--income); }
 .month-bars .bar.out { background: var(--danger); opacity: .75; }
 .legend { display: flex; align-items: center; gap: .4rem; font-size: .8rem; color: var(--text-muted); margin-top: .6rem; }
 .legend .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-left: .6rem; }
 .legend .dot:first-child { margin-left: 0; }
-.legend .dot.in { background: var(--primary); }
+.legend .dot.in { background: var(--income); }
 .legend .dot.out { background: var(--danger); opacity: .75; }
 @media (max-width: 780px) { .month-bars, .month-bars-head { display: none; } }
 
@@ -394,3 +396,10 @@ tr.clickable-row:hover td { background: var(--primary-soft); }
 .legal li { margin-bottom: .3rem; }
 .legal table td { vertical-align: top; }
 @media print { .legal-head, .legal .assign-box { display: none; } .legal { box-shadow: none; border: none; } }
+
+/* Logótipo no menu, receitas e números */
+.sidebar .brand .brand-logo { display: block; width: 100%; max-width: 190px; height: auto; }
+@media (max-width: 780px) { .sidebar .brand .brand-logo { width: auto; height: 34px; } }
+.badge.income { background: var(--income); color: #262627; border-color: transparent; }
+.income-value { color: var(--income); }
+strong, b { font-weight: 600; }
