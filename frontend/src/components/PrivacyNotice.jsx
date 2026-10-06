@@ -5,7 +5,7 @@ import { POLICY_VERSION, POLICY_DATE_LABEL } from '../lib/privacy'
 // Aviso mostrado ao entrar, enquanto o utilizador não confirmar que tomou conhecimento da
 // versão em vigor da política de privacidade. Não é um pedido de consentimento: os dados
 // são tratados por obrigação legal e para gerir o condomínio; aqui só se garante a informação.
-export default function PrivacyNotice({ firstTime, onDone, onDecline }) {
+export default function PrivacyNotice({ firstTime, onDone, onDecline, onSkip }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
 
@@ -14,7 +14,10 @@ export default function PrivacyNotice({ firstTime, onDone, onDecline }) {
     try {
       await api.post('/me/privacy-ack', { version: POLICY_VERSION })
       await onDone()
-    } catch (e) { setErr(e.message); setBusy(false) }
+    } catch (e) {
+      // nunca bloquear a entrada por causa de uma falha a registar: mostra o erro e deixa continuar
+      setErr(e.message || 'erro desconhecido'); setBusy(false)
+    }
   }
 
   return (
@@ -32,10 +35,16 @@ export default function PrivacyNotice({ firstTime, onDone, onDecline }) {
             para que servem, quem os pode ver, durante quanto tempo ficam guardados e como podes exercer os teus direitos (aceder, corrigir, apagar,
             descarregar uma cópia).
           </p>
-          {err && <div className="msg error">{err}</div>}
+          {err && (
+            <div className="msg error">
+              Não foi possível registar a confirmação agora ({err}). Podes continuar; voltamos a pedir no próximo acesso.
+            </div>
+          )}
           <div className="modal-actions">
             <button type="button" className="btn secondary small" onClick={onDecline}>Terminar sessão</button>
-            <button type="button" className="btn small" disabled={busy} onClick={confirm}>{busy ? 'A guardar…' : 'Li e tomei conhecimento'}</button>
+            {err
+              ? <button type="button" className="btn small" onClick={onSkip}>Continuar</button>
+              : <button type="button" className="btn small" disabled={busy} onClick={confirm}>{busy ? 'A guardar…' : 'Li e tomei conhecimento'}</button>}
           </div>
         </div>
       </div>

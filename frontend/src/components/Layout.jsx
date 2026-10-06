@@ -69,6 +69,7 @@ export default function Layout() {
   const { signOut, user } = useAuth()
   const { me, isAdmin, condominiums, selectedId, setSelectedId, loading, error, reload } = useCondo()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [ackLater, setAckLater] = useState(false) // o registo falhou: deixa continuar e volta a pedir no próximo acesso
   const location = useLocation()
 
   // No telemóvel, o menu fecha-se sozinho ao mudar de página
@@ -146,7 +147,10 @@ export default function Layout() {
       <main className="main">
         <Outlet />
       </main>
-      {me && me.privacy_ack_version !== POLICY_VERSION && <PrivacyNotice firstTime={!me.privacy_ack_version} onDone={reload} onDecline={signOut} />}
+      {/* só quando o servidor já suporta o registo (campo presente) e ainda não foi confirmado */}
+      {me && 'privacy_ack_version' in me && me.privacy_ack_version !== POLICY_VERSION && !ackLater && (
+        <PrivacyNotice firstTime={!me.privacy_ack_version} onDone={reload} onDecline={signOut} onSkip={() => setAckLater(true)} />
+      )}
     </div>
   )
 }
