@@ -23,7 +23,7 @@ export default function PrivacyPolicy() {
   }
 
   if (!e) return <div className="empty">A carregar…</div>
-  const entity = e.entity_name || 'a entidade que explora a plataforma Domvus'
+  const two = !!e.entity2_name // dois responsáveis pela plataforma
   const contact = e.privacy_email
     ? <a href={`mailto:${e.privacy_email}`}>{e.privacy_email}</a>
     : 'o administrador do seu condomínio'
@@ -54,9 +54,13 @@ export default function PrivacyPolicy() {
           </li>
           <li>
             <strong>{e.entity_name || 'A entidade que explora a plataforma Domvus'}</strong>
-            {e.entity_nif && <>, NIF {e.entity_nif}</>}{e.entity_address && <>, com sede em {e.entity_address}</>}, disponibiliza e mantém a plataforma.
-            Trata os dados dos condóminos <strong>por conta do condomínio</strong> (como subcontratante) e é responsável pelo tratamento dos dados
-            das contas de acesso (email e autenticação) e pela segurança da plataforma.
+            {e.entity_nif && <>, NIF {e.entity_nif}</>}
+            {two && <>, e <strong>{e.entity2_name}</strong>{e.entity2_nif && <>, NIF {e.entity2_nif}</>}</>}
+            {e.entity_address && <>, com morada em {e.entity_address}</>}, {two ? 'disponibilizam e mantêm' : 'disponibiliza e mantém'} a plataforma
+            {two && <>, em conjunto (responsáveis conjuntos, nos termos do art. 26.º do RGPD)</>}.
+            {' '}{two ? 'Tratam' : 'Trata'} os dados dos condóminos <strong>por conta do condomínio</strong> (como {two ? 'subcontratantes' : 'subcontratante'}) e
+            {two ? ' são responsáveis' : ' é responsável'} pelo tratamento dos dados das contas de acesso (email e autenticação) e pela segurança da plataforma.
+            {two && ' Pode exercer os seus direitos junto de qualquer um deles, através do contacto abaixo.'}
           </li>
         </ul>
         <p>

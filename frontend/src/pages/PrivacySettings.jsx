@@ -5,7 +5,7 @@ import { useCondo } from '../lib/CondoContext'
 import { POLICY_VERSION, POLICY_DATE_LABEL } from '../lib/privacy'
 
 const EMPTY = {
-  entity_name: '', entity_nif: '', entity_address: '', privacy_email: '', privacy_phone: '',
+  entity_name: '', entity_nif: '', entity2_name: '', entity2_nif: '', entity_address: '', privacy_email: '', privacy_phone: '',
   dpo_name: '', dpo_email: '', data_location: '', transfers_outside_eu: false,
 }
 
@@ -32,6 +32,8 @@ export default function PrivacySettings() {
   const missing = [
     !form.entity_name && 'nome da entidade', !form.entity_nif && 'NIF', !form.privacy_email && 'email de contacto para privacidade',
     !form.data_location && 'local de alojamento dos dados',
+    form.entity2_name && !form.entity2_nif && 'NIF do segundo responsável',
+    !form.entity2_name && form.entity2_nif && 'nome do segundo responsável',
   ].filter(Boolean)
 
   async function save(e) {
@@ -69,12 +71,22 @@ export default function PrivacySettings() {
         <fieldset disabled={!canEdit} style={{ border: 'none', padding: 0, margin: 0 }} className="stack">
           <div className="row form-row">
             <div className="field" style={{ flex: 2, minWidth: 220 }}>
-              <label htmlFor="pv-name">Nome / firma *</label>
+              <label htmlFor="pv-name">Responsável — nome / firma *</label>
               <input id="pv-name" value={form.entity_name} onChange={set('entity_name')} placeholder="Ex: Domvus, Lda." />
             </div>
             <div className="field" style={{ flex: 1, minWidth: 140 }}>
               <label htmlFor="pv-nif">NIF *</label>
               <input id="pv-nif" value={form.entity_nif} onChange={set('entity_nif')} inputMode="numeric" />
+            </div>
+          </div>
+          <div className="row form-row">
+            <div className="field" style={{ flex: 2, minWidth: 220 }}>
+              <label htmlFor="pv-name2">Segundo responsável — nome / firma</label>
+              <input id="pv-name2" value={form.entity2_name} onChange={set('entity2_name')} placeholder="Deixa vazio se houver só um" />
+            </div>
+            <div className="field" style={{ flex: 1, minWidth: 140 }}>
+              <label htmlFor="pv-nif2">NIF do segundo responsável</label>
+              <input id="pv-nif2" value={form.entity2_nif} onChange={set('entity2_nif')} inputMode="numeric" />
             </div>
           </div>
           <div className="field">
