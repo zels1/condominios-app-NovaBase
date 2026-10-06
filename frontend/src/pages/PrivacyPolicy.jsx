@@ -23,7 +23,9 @@ export default function PrivacyPolicy() {
   }
 
   if (!e) return <div className="empty">A carregar…</div>
-  const two = !!e.entity2_name // dois responsáveis pela plataforma
+  // um ou dois responsáveis pela plataforma, em pé de igualdade
+  const people = [[e.entity_name, e.entity_nif], [e.entity2_name, e.entity2_nif]].filter(([n]) => n)
+  const two = people.length === 2
   const contact = e.privacy_email
     ? <a href={`mailto:${e.privacy_email}`}>{e.privacy_email}</a>
     : 'o administrador do seu condomínio'
@@ -53,9 +55,10 @@ export default function PrivacyPolicy() {
             dos condóminos: é quem decide que dados regista e para quê (quotas, assembleias, ocorrências, etc.).
           </li>
           <li>
-            <strong>{e.entity_name || 'A entidade que explora a plataforma Domvus'}</strong>
-            {e.entity_nif && <>, NIF {e.entity_nif}</>}
-            {two && <>, e <strong>{e.entity2_name}</strong>{e.entity2_nif && <>, NIF {e.entity2_nif}</>}</>}
+            {people.length === 0 && <strong>A entidade que explora a plataforma Domvus</strong>}
+            {people.map(([n, nif], i) => (
+              <span key={n}>{i > 0 && ' e '}<strong>{n}</strong>{nif && <>, NIF {nif}</>}</span>
+            ))}
             {e.entity_address && <>, com morada em {e.entity_address}</>}, {two ? 'disponibilizam e mantêm' : 'disponibiliza e mantém'} a plataforma
             {two && <>, em conjunto (responsáveis conjuntos, nos termos do art. 26.º do RGPD)</>}.
             {' '}{two ? 'Tratam' : 'Trata'} os dados dos condóminos <strong>por conta do condomínio</strong> (como {two ? 'subcontratantes' : 'subcontratante'}) e

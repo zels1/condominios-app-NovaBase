@@ -29,11 +29,13 @@ export default function PrivacySettings() {
   if (!form) return msg ? <div className="msg error">{msg.text}</div> : <div className="empty">A carregar…</div>
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
+  const pairs = [[form.entity_name, form.entity_nif], [form.entity2_name, form.entity2_nif]]
   const missing = [
-    !form.entity_name && 'nome da entidade', !form.entity_nif && 'NIF', !form.privacy_email && 'email de contacto para privacidade',
+    !pairs.some(([n]) => n) && 'nome dos responsáveis',
+    pairs.some(([n, nif]) => n && !nif) && 'NIF de um dos responsáveis',
+    pairs.some(([n, nif]) => !n && nif) && 'nome de um dos responsáveis',
+    !form.privacy_email && 'email de contacto para privacidade',
     !form.data_location && 'local de alojamento dos dados',
-    form.entity2_name && !form.entity2_nif && 'NIF do segundo responsável',
-    !form.entity2_name && form.entity2_nif && 'nome do segundo responsável',
   ].filter(Boolean)
 
   async function save(e) {
@@ -63,29 +65,30 @@ export default function PrivacySettings() {
       {msg && <div className={`msg ${msg.type}`}>{msg.text}</div>}
 
       <form className="card stack" onSubmit={save}>
-        <h3 style={{ margin: 0 }}>Entidade que explora a plataforma</h3>
+        <h3 style={{ margin: 0 }}>Responsáveis pela plataforma</h3>
         <p className="hint" style={{ margin: 0 }}>
+          Indica um ou dois responsáveis (aparecem na política lado a lado, sem ordem de importância).
           Estes dados aparecem na política de privacidade, que qualquer pessoa pode ler (mesmo sem conta).
           {!canEdit && ' Só o administrador principal da plataforma (super_admin) os pode alterar.'}
         </p>
         <fieldset disabled={!canEdit} style={{ border: 'none', padding: 0, margin: 0 }} className="stack">
           <div className="row form-row">
             <div className="field" style={{ flex: 2, minWidth: 220 }}>
-              <label htmlFor="pv-name">Responsável — nome / firma *</label>
-              <input id="pv-name" value={form.entity_name} onChange={set('entity_name')} placeholder="Ex: Domvus, Lda." />
+              <label htmlFor="pv-name">Responsável — nome / firma</label>
+              <input id="pv-name" value={form.entity_name} onChange={set('entity_name')} placeholder="Nome" />
             </div>
             <div className="field" style={{ flex: 1, minWidth: 140 }}>
-              <label htmlFor="pv-nif">NIF *</label>
+              <label htmlFor="pv-nif">NIF</label>
               <input id="pv-nif" value={form.entity_nif} onChange={set('entity_nif')} inputMode="numeric" />
             </div>
           </div>
           <div className="row form-row">
             <div className="field" style={{ flex: 2, minWidth: 220 }}>
-              <label htmlFor="pv-name2">Segundo responsável — nome / firma</label>
-              <input id="pv-name2" value={form.entity2_name} onChange={set('entity2_name')} placeholder="Deixa vazio se houver só um" />
+              <label htmlFor="pv-name2">Responsável — nome / firma</label>
+              <input id="pv-name2" value={form.entity2_name} onChange={set('entity2_name')} placeholder="Nome" />
             </div>
             <div className="field" style={{ flex: 1, minWidth: 140 }}>
-              <label htmlFor="pv-nif2">NIF do segundo responsável</label>
+              <label htmlFor="pv-nif2">NIF</label>
               <input id="pv-nif2" value={form.entity2_nif} onChange={set('entity2_nif')} inputMode="numeric" />
             </div>
           </div>

@@ -684,7 +684,7 @@ class PrivacyEntity(BaseModel):
     """Identificação da entidade que explora a plataforma, mostrada na política de privacidade."""
     entity_name: Optional[str] = None
     entity_nif: Optional[str] = None
-    # segundo responsável (quando a plataforma é explorada por duas pessoas/entidades)
+    # outro responsável (a plataforma pode ser explorada por duas pessoas/entidades, em pé de igualdade)
     entity2_name: Optional[str] = None
     entity2_nif: Optional[str] = None
     entity_address: Optional[str] = None
