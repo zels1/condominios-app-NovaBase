@@ -47,6 +47,9 @@ class User(Base):
     correspondence_address = Column(String, nullable=True)
     iban = Column(String, nullable=True)  # IBAN para reembolsos
     notes = Column(Text, nullable=True)
+    # política de privacidade: versão de que o utilizador tomou conhecimento, e quando
+    privacy_ack_version = Column(String, nullable=True)
+    privacy_ack_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     owner_links = relationship("FractionOwner", back_populates="user")
@@ -55,6 +58,15 @@ class User(Base):
 # ---------------------------------------------------------------------------
 # Condomínios, frações, proprietários
 # ---------------------------------------------------------------------------
+
+class PlatformSetting(Base):
+    """Definições gerais da plataforma (ex: identificação da entidade para a política de privacidade)."""
+    __tablename__ = "platform_settings"
+    key = Column(String, primary_key=True)
+    value = Column(JSONB, nullable=False, default=dict)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+    updated_by = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
+
 
 class Condominium(Base):
     __tablename__ = "condominiums"

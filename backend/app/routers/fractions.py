@@ -59,13 +59,27 @@ def list_fractions(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    require_condo_member(db, user, condominium_id)
-    return (
+    is_admin = require_condo_member(db, user, condominium_id)
+    fractions = (
         db.query(models.Fraction)
         .filter(models.Fraction.condominium_id == condominium_id, models.Fraction.is_active == True)  # noqa: E712
         .order_by(models.Fraction.identifier)
         .all()
     )
+    if is_admin:
+        return fractions
+    # condómino: vê a lista de frações do prédio, mas o seguro só das suas (privacidade)
+    mine = set(get_user_fraction_ids(db, user))
+    out = []
+    for f in fractions:
+        o = schemas.FractionOut.model_validate(f)
+        if f.id not in mine:
+            o.insurance_company = None
+            o.insurance_policy_number = None
+            o.insurance_valid_until = None
+            o.has_insurance_document = False
+        out.append(o)
+    return out
 
 
 @router.get("/permilagem-check")

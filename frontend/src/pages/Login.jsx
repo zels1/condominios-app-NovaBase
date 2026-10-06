@@ -159,6 +159,11 @@ export default function Login() {
           <button className="btn block" disabled={busy}>
             {busy ? 'A processar…' : mode === 'signin' ? 'Entrar' : mode === 'signup' ? 'Criar conta' : 'Enviar link de recuperação'}
           </button>
+          {mode === 'signup' && (
+            <p className="hint" style={{ margin: 0, textAlign: 'center' }}>
+              Ao criar conta, declaras que leste a <a href="/privacidade" target="_blank" rel="noreferrer">Política de privacidade</a>.
+            </p>
+          )}
         </form>
 
         <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '.9rem' }}>
@@ -167,6 +172,9 @@ export default function Login() {
           ) : (
             <>{mode === 'forgot' ? 'Lembraste-te?' : 'Já tens conta?'} <button type="button" className="link-button" onClick={() => switchMode('signin')}>Inicia sessão</button></>
           )}
+        </p>
+        <p className="hint" style={{ textAlign: 'center', margin: '.6rem 0 0' }}>
+          <a href="/privacidade">Política de privacidade</a>
         </p>
       </div>
     </div>

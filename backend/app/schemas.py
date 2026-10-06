@@ -21,6 +21,8 @@ class UserOut(ORMBase):
     correspondence_address: Optional[str] = None
     iban: Optional[str] = None
     notes: Optional[str] = None
+    privacy_ack_version: Optional[str] = None
+    privacy_ack_at: Optional[datetime] = None
 
 
 class UserCreate(BaseModel):
@@ -675,3 +677,21 @@ class MaintenanceLogOut(ORMBase):
     notes: Optional[str] = None
     expense_id: Optional[str] = None
     created_at: Optional[datetime] = None
+
+
+# ---------- Política de privacidade (RGPD) ----------
+class PrivacyEntity(BaseModel):
+    """Identificação da entidade que explora a plataforma, mostrada na política de privacidade."""
+    entity_name: Optional[str] = None
+    entity_nif: Optional[str] = None
+    entity_address: Optional[str] = None
+    privacy_email: Optional[str] = None
+    privacy_phone: Optional[str] = None
+    dpo_name: Optional[str] = None  # encarregado de proteção de dados, se existir
+    dpo_email: Optional[str] = None
+    data_location: Optional[str] = None  # onde ficam alojados os dados (ex: "União Europeia (Irlanda)")
+    transfers_outside_eu: bool = False  # algum prestador trata dados fora do EEE?
+
+
+class PrivacyAck(BaseModel):
+    version: str = Field(min_length=1, max_length=40)

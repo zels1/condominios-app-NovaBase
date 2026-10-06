@@ -13,7 +13,7 @@ from .models import Base
 from .routers import (
     condominiums, fractions, budgets, quotas, payments,
     latefees, reminders, suppliers, maintenance, assemblies,
-    documents, dashboard, users, owners, account, maintenance_tasks, charges, backup,
+    documents, dashboard, users, owners, account, maintenance_tasks, charges, backup, legal,
 )
 
 app = FastAPI(title="Gestão de Condomínios API", version="1.0.0")
@@ -52,7 +52,7 @@ for router in (
     condominiums.router, fractions.router, budgets.router, quotas.router, payments.router,
     latefees.router, reminders.router, suppliers.router, maintenance.router, assemblies.router,
     documents.router, dashboard.router, dashboard.overview_router, users.router, owners.router,
-    account.router, maintenance_tasks.router, owners.platform_router, charges.router, backup.router,
+    account.router, maintenance_tasks.router, owners.platform_router, charges.router, backup.router, legal.router, legal.me_router,
 ):
     app.include_router(router)
 
@@ -85,6 +85,8 @@ def on_startup():
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS iban VARCHAR"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS notes TEXT"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS landline_phone VARCHAR"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy_ack_version VARCHAR"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy_ack_at TIMESTAMP"))
 
         # Seguro da fração (fractions)
         conn.execute(text("ALTER TABLE fractions ADD COLUMN IF NOT EXISTS insurance_company VARCHAR"))

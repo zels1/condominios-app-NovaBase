@@ -383,3 +383,14 @@ tr.clickable-row:hover td { background: var(--primary-soft); }
 .manual-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .5rem .8rem; }
 .manual-cell { display: flex; flex-direction: column; gap: .2rem; font-size: .88rem; }
 .manual-cell input, .small-input { padding: .4em .6em; border: 1px solid var(--border); border-radius: 8px; font: inherit; }
+
+/* Páginas legais (política de privacidade) */
+.legal-page { max-width: 860px; margin: 0 auto; padding: 1.2rem 1rem 3rem; }
+.legal-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+.legal h1 { margin-top: 0; }
+.legal h2 { font-size: 1.08rem; margin: 1.6rem 0 .5rem; }
+.legal p, .legal li { line-height: 1.65; }
+.legal ul { padding-left: 1.2rem; margin: .4rem 0; }
+.legal li { margin-bottom: .3rem; }
+.legal table td { vertical-align: top; }
+@media print { .legal-head, .legal .assign-box { display: none; } .legal { box-shadow: none; border: none; } }

@@ -18,6 +18,8 @@ import Maintenance from './pages/Maintenance'
 import Occurrences from './pages/Occurrences'
 import AdminOverview from './pages/AdminOverview'
 import Backup from './pages/Backup'
+import PrivacyPolicy from './pages/PrivacyPolicy'
+import PrivacySettings from './pages/PrivacySettings'
 import Assemblies from './pages/Assemblies'
 import Documents from './pages/Documents'
 import OwnerHome from './pages/OwnerHome'
@@ -37,6 +39,9 @@ function LoginScreen() {
 
 function Gate({ children }) {
   const { loading, user, recovery } = useAuth()
+  const location = useLocation()
+  // a política de privacidade é pública: lê-se com ou sem sessão iniciada
+  if (location.pathname === '/privacidade') return <PrivacyPolicy />
   if (loading) return <div className="empty">A carregar…</div>
   if (user && recovery) return <ResetPassword />
   if (!user) return <LoginScreen />
@@ -71,6 +76,7 @@ export default function App() {
               <Route path="/documentos" element={<Documents />} />
               <Route path="/conta" element={<AccountStatement />} />
               <Route path="/copia-seguranca" element={<Backup />} />
+              <Route path="/rgpd" element={<PrivacySettings />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>

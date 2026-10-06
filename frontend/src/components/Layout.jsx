@@ -3,6 +3,8 @@ import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useCondo } from '../lib/CondoContext'
 import DomvusLogo from './DomvusLogo'
+import PrivacyNotice from './PrivacyNotice'
+import { POLICY_VERSION } from '../lib/privacy'
 
 // Menu lateral organizado por categorias
 const ADMIN_MENU = [
@@ -39,6 +41,7 @@ const ADMIN_MENU = [
     title: 'Administração',
     links: [
       { to: '/copia-seguranca', label: 'Cópia de segurança' },
+      { to: '/rgpd', label: 'Privacidade (RGPD)' },
     ],
   },
 ]
@@ -64,7 +67,7 @@ const OWNER_MENU = [
 
 export default function Layout() {
   const { signOut, user } = useAuth()
-  const { me, isAdmin, condominiums, selectedId, setSelectedId, loading, error } = useCondo()
+  const { me, isAdmin, condominiums, selectedId, setSelectedId, loading, error, reload } = useCondo()
   const [menuOpen, setMenuOpen] = useState(false)
   const location = useLocation()
 
@@ -137,11 +140,13 @@ export default function Layout() {
           <div>{me?.full_name || user?.email}</div>
           <div style={{ textTransform: 'capitalize' }}>{me?.role === 'owner' ? 'Condómino' : 'Administrador'}</div>
           <button className="btn secondary small" style={{ marginTop: '.6rem' }} onClick={signOut}>Terminar sessão</button>
+          <div style={{ marginTop: '.6rem' }}><NavLink to="/privacidade" className="hint">Política de privacidade</NavLink></div>
         </div>
       </aside>
       <main className="main">
         <Outlet />
       </main>
+      {me && me.privacy_ack_version !== POLICY_VERSION && <PrivacyNotice firstTime={!me.privacy_ack_version} onDone={reload} onDecline={signOut} />}
     </div>
   )
 }
