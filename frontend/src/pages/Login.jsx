@@ -92,7 +92,6 @@ export default function Login() {
       <div className="card auth-card">
         <div className="auth-brand">
           <DomvusLogo size={44} stacked />
-          <span className="hint">Gestão de condomínios</span>
         </div>
         <p style={{ color: 'var(--text-muted)' }}>
           {mode === 'signin' && 'Inicia sessão para continuar.'}

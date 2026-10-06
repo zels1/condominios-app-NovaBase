@@ -63,7 +63,7 @@ export default function AdminOverview() {
         </div>
         <div className="card stat">
           <span className="label">Cobrado este mês</span>
-          <span className="value">{money(t.this_month_collected)}</span>
+          <span className="value income-value">{money(t.this_month_collected)}</span>
           <span className="label">de {money(t.this_month_expected)} esperado</span>
         </div>
         <div className="card stat">

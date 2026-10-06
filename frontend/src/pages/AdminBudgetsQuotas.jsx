@@ -115,7 +115,7 @@ export default function AdminBudgetsQuotas() {
         </div>
         <div className="card stat">
           <span className="label">Recebido {fMonth ? 'deste mês' : '(total)'}</span>
-          <span className="value">{money(received)}</span>
+          <span className="value income-value">{money(received)}</span>
           <span className="label">{issued > 0 ? `${Math.round((received / issued) * 100)}% do emitido` : '—'}</span>
         </div>
         <div className="card stat">

@@ -1,5 +1,6 @@
 """Recibo de pagamento de quota, em PDF (reportlab, fontes base com suporte a €, ã, ç, º)."""
 import io
+import os
 from datetime import date, datetime
 
 from reportlab.lib import colors
@@ -11,6 +12,8 @@ NAVY = colors.HexColor("#262627")
 BLUE = colors.HexColor("#262627")
 SIDE = colors.HexColor("#8E8E90")  # lado dos prédios no logótipo
 LIGHT = colors.HexColor("#F2F2F2")
+SIDE_LIGHT = colors.HexColor("#D2D2D4")
+LOGO_PNG = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "domvus-logo.png")
 MUTED = colors.HexColor("#667085")
 LINE = colors.HexColor("#E3E6EA")
 
@@ -34,10 +37,7 @@ def receipt_number(quota) -> str:
 def _logo(c, x, y, h):
     """Símbolo da Domvus como no original: quadrado azul-marinho, prédios claros com o lado azul.
     h = altura do quadrado; (x, y) = canto inferior esquerdo."""
-    c.setFillColor(NAVY)
-    c.roundRect(x, y, h, h, h * 0.18, stroke=0, fill=1)
-    pad = h * 0.18
-    x, y, h = x + (h - (h - 2 * pad) * 164 / 240) / 2, y + pad, h - 2 * pad
+    x = x + (h - h * 164 / 240) / 2
     s = h / 240.0
 
     def poly(points, color):
@@ -50,10 +50,10 @@ def _logo(c, x, y, h):
         c.setFillColor(color)
         c.drawPath(p, stroke=0, fill=1)
 
-    poly([(6, 127), (53, 96), (53, 233), (6, 233)], LIGHT)
-    poly([(53, 96), (73, 112), (73, 233), (53, 233)], SIDE)
-    poly([(74, 39), (120, 7), (120, 233), (74, 233)], LIGHT)
-    poly([(120, 7), (158, 39), (158, 233), (120, 233)], SIDE)
+    poly([(6, 127), (53, 96), (53, 233), (6, 233)], NAVY)
+    poly([(53, 96), (73, 112), (73, 233), (53, 233)], SIDE_LIGHT)
+    poly([(74, 39), (120, 7), (120, 233), (74, 233)], NAVY)
+    poly([(120, 7), (158, 39), (158, 233), (120, 233)], SIDE_LIGHT)
 
 
 def _quota_title(quota) -> str:
@@ -208,6 +208,11 @@ def build_quota_receipt(condo, fraction, owner, quota, payments) -> bytes:
     c.drawString(left, 25 * mm, "Documento comprovativo do pagamento da quota de condomínio acima indicada." if is_receipt
                  else "Aviso de cobrança da quota de condomínio acima indicada. Não serve de recibo.")
     c.drawString(left, 21 * mm, f"Emitido através da plataforma Domvus em {datetime.now():%d/%m/%Y %H:%M}.")
+    try:  # logótipo Domvus no rodapé
+        lh = 8 * mm
+        c.drawImage(LOGO_PNG, right - lh * 720 / 212, 19.5 * mm, width=lh * 720 / 212, height=lh, mask="auto")
+    except Exception:
+        pass
     c.showPage()
     c.save()
     return buf.getvalue()
