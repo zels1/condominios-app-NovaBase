@@ -4,9 +4,9 @@
   --border: #e3e6ea;
   --text: #1c2230;
   --text-muted: #667085;
-  --primary: #2b507c;
-  --primary-dark: #0d274c;
-  --primary-soft: #e8eef6;
+  --primary: #262627;
+  --primary-dark: #0f0f10;
+  --primary-soft: #ececed;
   --danger: #c0392b;
   --danger-soft: #fbeae7;
   --warning: #b8860b;
@@ -128,7 +128,7 @@ tr:last-child td { border-bottom: none; }
 
 .auth-screen {
   min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem;
-  background: linear-gradient(160deg, #e9eff7, var(--bg));
+  background: linear-gradient(160deg, #e4e4e5, var(--bg));
 }
 .auth-card { width: 100%; max-width: 380px; }
 
@@ -291,7 +291,7 @@ td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-n
 }
 
 /* Logótipo como o original: bloco azul-marinho */
-.domvus-badge { display: inline-flex; align-items: center; justify-content: center; background: #0D274C; border-radius: 10px; padding: .55rem .8rem .6rem; }
+.domvus-badge { display: inline-flex; align-items: center; justify-content: center; background: #262627; border-radius: 10px; padding: .55rem .8rem .6rem; }
 .domvus-badge.stacked { padding: 1.4rem 2rem 1.5rem; border-radius: 14px; }
 .sidebar .brand { width: 100%; }
 .sidebar .brand .domvus-badge { width: 100%; justify-content: flex-start; }
@@ -351,12 +351,12 @@ tr.clickable-row:hover td { background: var(--primary-soft); }
 
 /* Janelas de diálogo */
 .modal-backdrop {
-  position: fixed; inset: 0; z-index: 100; background: rgba(13, 39, 76, .38);
+  position: fixed; inset: 0; z-index: 100; background: rgba(38, 38, 39, .38);
   display: flex; align-items: flex-start; justify-content: center; padding: 6vh 1rem 1rem; overflow-y: auto;
 }
 .modal {
   background: var(--surface); border-radius: 14px; width: 100%; max-width: 560px;
-  box-shadow: 0 18px 50px rgba(13, 39, 76, .25); border: 1px solid var(--border);
+  box-shadow: 0 18px 50px rgba(38, 38, 39, .25); border: 1px solid var(--border);
 }
 .modal.wide { max-width: 860px; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.2rem .4rem; }

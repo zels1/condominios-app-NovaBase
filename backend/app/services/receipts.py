@@ -7,8 +7,9 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
-NAVY = colors.HexColor("#0D274C")
-BLUE = colors.HexColor("#2B507C")
+NAVY = colors.HexColor("#262627")
+BLUE = colors.HexColor("#262627")
+SIDE = colors.HexColor("#8E8E90")  # lado dos prédios no logótipo
 LIGHT = colors.HexColor("#F2F2F2")
 MUTED = colors.HexColor("#667085")
 LINE = colors.HexColor("#E3E6EA")
@@ -50,9 +51,9 @@ def _logo(c, x, y, h):
         c.drawPath(p, stroke=0, fill=1)
 
     poly([(6, 127), (53, 96), (53, 233), (6, 233)], LIGHT)
-    poly([(53, 96), (73, 112), (73, 233), (53, 233)], BLUE)
+    poly([(53, 96), (73, 112), (73, 233), (53, 233)], SIDE)
     poly([(74, 39), (120, 7), (120, 233), (74, 233)], LIGHT)
-    poly([(120, 7), (158, 39), (158, 233), (120, 233)], BLUE)
+    poly([(120, 7), (158, 39), (158, 233), (120, 233)], SIDE)
 
 
 def _quota_title(quota) -> str:
@@ -124,7 +125,7 @@ def build_quota_receipt(condo, fraction, owner, quota, payments) -> bytes:
     y -= 13 * mm
 
     def header_row(y, labels_right):
-        c.setFillColor(colors.HexColor("#F3F5F8"))
+        c.setFillColor(colors.HexColor("#F1F1F2"))
         c.rect(left, y - 2 * mm, right - left, 8 * mm, stroke=0, fill=1)
         c.setFillColor(NAVY)
         c.setFont("Helvetica-Bold", 9)

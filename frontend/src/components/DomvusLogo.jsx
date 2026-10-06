@@ -1,9 +1,9 @@
 // Logótipo Domvus: símbolo (dois edifícios) + palavra "domvus".
-// variant="dark"  → para fundos claros (símbolo azul-marinho)
+// variant="dark"  → para fundos claros (símbolo cinzento-escuro)
 // variant="light" → para fundos escuros (símbolo claro, como no logótipo original)
 const COLORS = {
-  dark: { front: '#0D274C', side: '#2B507C', text: '#0D274C' },
-  light: { front: '#F2F2F2', side: '#2B507C', text: '#F2F2F2' },
+  dark: { front: '#262627', side: '#8E8E90', text: '#262627' },
+  light: { front: '#F2F2F2', side: '#8E8E90', text: '#F2F2F2' },
 }
 
 export function DomvusMark({ size = 32, variant = 'dark', title }) {
@@ -19,7 +19,7 @@ export function DomvusMark({ size = 32, variant = 'dark', title }) {
   )
 }
 
-// Logótipo tal como o original: fundo azul-marinho, prédios claros com o lado azul e
+// Logótipo tal como o original: fundo cinzento-escuro, prédios claros com o lado cinzento e
 // a palavra "domvus" a branco. badge={false} desenha só o símbolo e a palavra, sem fundo.
 export default function DomvusLogo({ size = 30, stacked = false, badge = true, variant = 'light', className = '' }) {
   const c = COLORS[variant] || COLORS.light

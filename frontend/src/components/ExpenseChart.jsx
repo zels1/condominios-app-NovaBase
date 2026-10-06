@@ -1,6 +1,6 @@
 // Gráfico simples "para onde vai o meu dinheiro" — donut por categoria de despesa.
 // Sem biblioteca externa: um donut em SVG puro, desenhado à escala.
-const PALETTE = ['#2b507c', '#6fa3d0', '#c98a3a', '#8a6fb0', '#c0574a', '#3e8e7e', '#a3a13a']
+const PALETTE = ['#262627', '#8e8e90', '#c98a3a', '#8a6fb0', '#c0574a', '#3e8e7e', '#a3a13a']
 
 function money(v) { return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(v || 0) }
 
