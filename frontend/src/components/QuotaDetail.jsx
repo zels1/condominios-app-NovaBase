@@ -11,11 +11,12 @@ export function linesText(quota) {
 }
 
 export function QuotaTitle({ quota, showLines = true }) {
-  const extra = quota.kind === 'extraordinary'
+  const extra = quota.kind && quota.kind !== 'regular'
+  const invoice = quota.kind === 'invoice'
   return (
     <div>
-      <span style={{ whiteSpace: extra ? undefined : 'nowrap' }}>{extra ? (quota.description || 'Quota extraordinária') : quotaMonth(quota)}</span>
-      {extra && <span className="badge warn" style={{ marginLeft: '.35rem' }}>extraordinária</span>}
+      <span style={{ whiteSpace: extra ? undefined : 'nowrap' }}>{extra ? (quota.description || (invoice ? 'Fatura' : 'Quota extraordinária')) : quotaMonth(quota)}</span>
+      {extra && <span className="badge warn" style={{ marginLeft: '.35rem' }}>{invoice ? 'fatura' : 'extraordinária'}</span>}
       {extra && <div className="hint" style={{ fontSize: '.78rem' }}>{quotaMonth(quota)}</div>}
       {showLines && !extra && quota.lines && quota.lines.length > 1 && (
         <div className="hint quota-lines">

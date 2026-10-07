@@ -58,7 +58,7 @@ def _logo(c, x, y, h):
 
 def _quota_title(quota) -> str:
     month = f"{MONTHS[quota.reference_month.month - 1]} de {quota.reference_month.year}"
-    if getattr(quota, "kind", "regular") == "extraordinary":
+    if getattr(quota, "kind", "regular") != "regular":
         return f"{quota.description or 'Quota extraordinária'} ({month})"
     return f"Quota de {month}"
 
@@ -110,7 +110,7 @@ def build_quota_receipt(condo, fraction, owner, quota, payments) -> bytes:
     y -= 6 * mm
     c.setFillColor(colors.black)
     c.setFont("Helvetica-Bold", 12)
-    c.drawString(left, y, (owner.full_name if owner else "Condómino")[:40])
+    c.drawString(left, y, (owner.full_name if owner else (getattr(quota, "billed_to", None) or "Condómino"))[:40])
     c.setFont("Helvetica-Bold", 11)
     c.drawString(W / 2, y, _quota_title(quota)[:48])
     c.setFont("Helvetica", 10)

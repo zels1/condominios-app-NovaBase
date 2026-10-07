@@ -31,7 +31,10 @@ async function request(path, { method = 'GET', body, params } = {}) {
     } catch {
       // resposta sem corpo JSON
     }
-    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+    const err = new Error(typeof detail === 'string' ? detail : (detail?.message || JSON.stringify(detail)))
+    err.status = res.status
+    err.detail = detail
+    throw err
   }
   if (res.status === 204) return null
   return res.json()
@@ -121,4 +124,17 @@ export const api = {
   download,
   fetchFile,
   openFile,
+}
+
+// Associar um condómino a uma fração que já tem proprietário exige confirmação: a API recusa
+// à primeira (409, fraction_has_owner) e só aceita com confirm_shared. call(confirmed) faz o pedido.
+export async function withSharedConfirm(call) {
+  try {
+    return await call(false)
+  } catch (err) {
+    if (err?.detail?.code !== 'fraction_has_owner') throw err
+    const ok = window.confirm(`${err.detail.message}\n\nOK = juntar como comproprietário. Cancelar = não associar.`)
+    if (!ok) throw new Error(`Não associado: a fração ${err.detail.fraction} já tem proprietário.`)
+    return call(true)
+  }
 }

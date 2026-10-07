@@ -154,6 +154,16 @@ def get_user_fraction_ids(db: Session, user: models.User) -> list:
     return [r[0] for r in rows]
 
 
+def owner_can_see_quota(db: Session, user: models.User, quota) -> bool:
+    """O condómino vê as cobranças das suas frações; se a cobrança for de um comproprietário
+    em concreto, só esse a vê."""
+    link = db.query(models.FractionOwner).filter(
+        models.FractionOwner.fraction_id == quota.fraction_id, models.FractionOwner.user_id == user.id).first()
+    if not link:
+        return False
+    return quota.owner_link_id is None or quota.owner_link_id == link.id
+
+
 def require_condo_member(db: Session, user: models.User, condominium_id: str) -> bool:
     """Garante que o utilizador pertence a este condomínio: é o admin dele (ou super_admin),
     ou tem pelo menos uma fração lá. Devolve True se for admin do condomínio."""

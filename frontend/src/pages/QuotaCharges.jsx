@@ -120,6 +120,7 @@ export function QuotaRuleForm({ condoId, fractions, rule, overrides = [], onCanc
         launched = true
       } else if (!once) {
         text += ` Entra nas quotas geradas ${form.frequency === 'mensal' ? 'todos os meses' : `de ${form.frequency === 'trimestral' ? '3 em 3' : form.frequency === 'semestral' ? '6 em 6' : '12 em 12'} meses`}.`
+        text += ' Para a incluir num mês que já tem quotas geradas, usa "⚡ Gerar quotas" e depois "Atualizar valores".'
       }
       await onSaved(text, launched)
     } catch (e2) { setErr(e2.message); setBusy(false) }

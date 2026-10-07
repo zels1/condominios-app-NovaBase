@@ -103,7 +103,13 @@ MIGRATIONS = [
     "ALTER TABLE quotas ADD COLUMN IF NOT EXISTS kind VARCHAR NOT NULL DEFAULT 'regular'",
     'ALTER TABLE quotas ADD COLUMN IF NOT EXISTS description VARCHAR',
     'ALTER TABLE quotas DROP CONSTRAINT IF EXISTS uq_quota_fraction_month',
-    "CREATE UNIQUE INDEX IF NOT EXISTS uq_quota_regular_month ON quotas (fraction_id, reference_month) WHERE kind = 'regular'",
+    # quotas repartidas pelos proprietários: deixa de haver uma só quota mensal por fração
+    'DROP INDEX IF EXISTS uq_quota_regular_month',
+    'ALTER TABLE quotas ADD COLUMN IF NOT EXISTS owner_link_id UUID REFERENCES fraction_owners(id) ON DELETE SET NULL',
+    'ALTER TABLE quotas ADD COLUMN IF NOT EXISTS billed_to VARCHAR',
+    "ALTER TABLE fractions ADD COLUMN IF NOT EXISTS billing_mode VARCHAR NOT NULL DEFAULT 'split'",
+    'ALTER TABLE fractions ADD COLUMN IF NOT EXISTS billing_owner_link_id UUID',
+    'CREATE INDEX IF NOT EXISTS ix_quota_fraction_month ON quotas (fraction_id, reference_month)',
 ]
 
 
@@ -122,7 +128,11 @@ def _already_applied(conn, sql: str) -> bool:
     m = re.match(r"ALTER TABLE (\w+) DROP CONSTRAINT IF EXISTS (\w+)", sql)
     if m:
         return conn.execute(text("SELECT 1 FROM pg_constraint WHERE conname = :c"), {"c": m.group(2)}).first() is None
-    m = re.match(r"CREATE UNIQUE INDEX IF NOT EXISTS (\w+)", sql)
+    m = re.match(r"DROP INDEX IF EXISTS (\w+)", sql)
+    if m:
+        return conn.execute(text("SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND indexname = :i"),
+                            {"i": m.group(1)}).first() is None
+    m = re.match(r"CREATE (?:UNIQUE )?INDEX IF NOT EXISTS (\w+)", sql)
     if m:
         return conn.execute(text("SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND indexname = :i"),
                             {"i": m.group(1)}).first() is not None

@@ -403,3 +403,10 @@ tr.clickable-row:hover td { background: var(--primary-soft); }
 .badge.income { background: var(--income); color: #262627; border-color: transparent; }
 .income-value { color: var(--income); }
 strong, b { font-weight: 600; }
+
+/* Conta da fração, faturas e avisos */
+.msg.warn { background: var(--warning-soft); color: #6b4e00; }
+.modal.xwide { max-width: 1080px; }
+.owner-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .35rem 0 .2rem; }
+.owner-chip { background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: .25em .8em; font-size: .88rem; }
+.billing-choice { display: flex; flex-direction: column; gap: .35rem; margin-top: .5rem; padding: .7rem .9rem; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }

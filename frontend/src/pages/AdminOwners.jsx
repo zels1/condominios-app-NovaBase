@@ -1,7 +1,9 @@
 import { Fragment, useEffect, useState } from 'react'
-import { api } from '../lib/api'
+import { api, withSharedConfirm } from '../lib/api'
 import { useCondo } from '../lib/CondoContext'
 import FilePicker from '../components/FilePicker'
+import Modal from '../components/Modal'
+import { OwnerInvoices } from './FractionAccount'
 import { DOC_ACCEPT, checkDocFile, uploadDocFile } from '../lib/files'
 
 const EMPTY_PROFILE = {
@@ -94,6 +96,7 @@ export default function AdminOwners() {
   const [tab, setTab] = useState('condo') // condo | all
   const [linkDrafts, setLinkDrafts] = useState([]) // frações do condómino em edição
   const [inviting, setInviting] = useState(null)
+  const [invoicesOf, setInvoicesOf] = useState(null) // condómino cujas faturas estão abertas
 
   async function load() {
     if (!selectedCondo) return
@@ -159,17 +162,18 @@ export default function AdminOwners() {
     if (new Set(chosen).size !== chosen.length) throw new Error('A mesma fração aparece duas vezes na ficha.')
     // primeiro as novas e as alteradas; só no fim as removidas (para a ficha nunca ficar sem frações a meio)
     for (const l of active.filter((x) => !x.id)) {
-      await api.post(base, { fraction_id: l.fraction_id, ownership_share: shareFromPermil(l.share), is_primary_contact: l.is_primary })
+      await withSharedConfirm((c) => api.post(base, { fraction_id: l.fraction_id, ownership_share: shareFromPermil(l.share), is_primary_contact: l.is_primary, confirm_shared: c }))
     }
     for (const l of active.filter((x) => x.id)) {
       const moved = l.fraction_id !== l.orig_fraction_id
       const shareChanged = l.share !== l.orig_share
       if (moved || shareChanged || l.is_primary !== l.orig_primary) {
-        await api.put(`${base}/${l.id}`, {
+        await withSharedConfirm((c) => api.put(`${base}/${l.id}`, {
           fraction_id: l.fraction_id,
           ownership_share: moved && !shareChanged ? undefined : shareFromPermil(l.share),
           is_primary_contact: l.is_primary,
-        })
+          confirm_shared: c,
+        }))
       }
     }
     for (const l of linkDrafts.filter((x) => x.removed && x.id)) {
@@ -220,7 +224,7 @@ export default function AdminOwners() {
     setError(null)
     try {
       // quota de propriedade em permilagem (vazio = repartir por igual com os outros proprietários)
-      const r = await api.post(`/condominiums/${selectedCondo.id}/owners`, { ...newForm, ownership_share: shareFromPermil(newForm.ownership_share) })
+      const r = await withSharedConfirm((c) => api.post(`/condominiums/${selectedCondo.id}/owners`, { ...newForm, ownership_share: shareFromPermil(newForm.ownership_share), confirm_shared: c }))
       const inv = newForm.send_invite ? ' ' + inviteText(r.invite_status, r.invite_error, newForm.email) : ` Quando criar conta com ${newForm.email}, fica logo ligado(a) a esta ficha.`
       setNotice(`${newForm.full_name} adicionado(a) a ${selectedCondo.name}.${inv}`)
       setNewForm(EMPTY_NEW)
@@ -499,6 +503,9 @@ export default function AdminOwners() {
                       {inviting === o.id ? 'A enviar…' : '✉ Enviar convite'}
                     </button>
                   )}
+                  {!o.is_pending && (
+                    <button className="btn secondary small" onClick={() => setInvoicesOf(o)} title="Todas as quotas e faturas deste condómino, com PDF">Faturas</button>
+                  )}
                   <button className="btn secondary small" onClick={() => startEdit(o)}>
                     {o.is_pending ? 'Completar ficha' : 'Editar ficha'}
                   </button>
@@ -514,6 +521,11 @@ export default function AdminOwners() {
         {owners.length > 0 && visible.length === 0 && <div className="empty">Nenhum condómino corresponde à pesquisa.</div>}
       </div>
       </>)}
+      {invoicesOf && (
+        <Modal title={`Faturas de ${invoicesOf.full_name}`} wide="x" onClose={() => setInvoicesOf(null)}>
+          <OwnerInvoices condoId={selectedCondo.id} owner={invoicesOf} />
+        </Modal>
+      )}
     </div>
   )
 }
@@ -532,7 +544,7 @@ function AssignFraction({ condoId, owner, fractions, exclude, onCancel, onDone }
     e.preventDefault()
     setErr(null); setBusy(true)
     try {
-      await api.post(`/condominiums/${condoId}/owners/${owner.id}/fractions`, { fraction_id: fractionId, ownership_share: shareFromPermil(share), is_primary_contact: primary })
+      await withSharedConfirm((c) => api.post(`/condominiums/${condoId}/owners/${owner.id}/fractions`, { fraction_id: fractionId, ownership_share: shareFromPermil(share), is_primary_contact: primary, confirm_shared: c }))
       await onDone(`${owner.full_name} ficou associado(a) à fração ${chosen?.identifier}.`)
     } catch (e2) { setErr(e2.message); setBusy(false) }
   }

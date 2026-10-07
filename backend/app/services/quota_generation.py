@@ -16,6 +16,7 @@ from calendar import monthrange
 from sqlalchemy.orm import Session
 
 from .. import models
+from .late_fee_engine import recompute_status
 
 
 class QuotaGenerationError(Exception):
@@ -187,6 +188,73 @@ def _due_date(ref_month_start: date, due_day: int) -> date:
     return ref_month_start.replace(day=min(max(int(due_day or 1), 1), last_day))
 
 
+# ---------- Repartição pelos proprietários da fração ----------
+def active_links(fraction) -> list:
+    today = date.today()
+    return sorted((l for l in fraction.owners if l.end_date is None or l.end_date >= today), key=lambda l: l.id)
+
+
+def link_name(link):
+    if not link:
+        return None
+    if link.user:
+        return link.user.full_name
+    return link.invited_email
+
+
+def billing_targets(fraction, mode: str = None, owner_link_id: str = None) -> list:
+    """A quem se cobra esta fração → [(FractionOwner | None, parte)], com as partes a somar 1.
+    Um só proprietário: paga tudo. Vários: cada um a sua quota de propriedade (split), ou
+    um único responsável (single)."""
+    links = active_links(fraction)
+    if not links:
+        return [(None, Decimal("1"))]
+    if len(links) == 1:
+        return [(links[0], Decimal("1"))]
+    mode = mode or fraction.billing_mode or "split"
+    if mode == "single":
+        wanted = owner_link_id or fraction.billing_owner_link_id
+        resp = next((l for l in links if l.id == wanted), None) \
+            or next((l for l in links if l.is_primary_contact), None) or links[0]
+        return [(resp, Decimal("1"))]
+    shares = [Decimal(str(l.ownership_share or 0)) for l in links]
+    total = sum(shares)
+    if total <= 0:
+        return [(l, Decimal("1") / len(links)) for l in links]
+    return [(l, sh / total) for l, sh in zip(links, shares)]
+
+
+def split_lines(flines: list, targets: list) -> list:
+    """Reparte cada rubrica pelos responsáveis → [(link, [(rubrica, valor)])]; o último
+    absorve o arredondamento, para a soma bater certo ao cêntimo."""
+    out = [(link, []) for link, _ in targets]
+    for item, amount in flines:
+        running = Decimal("0")
+        for i, (link, share) in enumerate(targets):
+            part = _round2(amount - running) if i == len(targets) - 1 else _round2(amount * share)
+            running += part
+            if part > 0:
+                out[i][1].append((item, part))
+    return [(link, lines) for link, lines in out if lines]
+
+
+def _set_lines(quota, lines):
+    """lines: [((charge_type_id, name, category), valor)]"""
+    quota.lines.clear()
+    for i, ((ct_id, name, category), a) in enumerate(lines):
+        quota.lines.append(models.QuotaLine(charge_type_id=ct_id, name=name, category=category, amount=a, position=i))
+    quota.base_amount = sum((a for _, a in lines), Decimal("0"))
+
+
+def _has_payments(q) -> bool:
+    return float(q.amount_paid or 0) > 0 or bool(q.payments)
+
+
+def _delete_quota(db, q):
+    db.query(models.ReminderLog).filter(models.ReminderLog.quota_id == q.id).delete(synchronize_session=False)
+    db.delete(q)
+
+
 def generate_monthly_quotas(
     db: Session,
     condominium_id: str,
@@ -194,11 +262,13 @@ def generate_monthly_quotas(
     due_day: int = 8,
     force: bool = False,
 ) -> dict:
-    """Gera a quota mensal de cada fração ativa, discriminada por rubrica.
-    force: apaga e regenera as quotas mensais já existentes para esse mês."""
+    """Gera a quota mensal de cada fração ativa, discriminada por rubrica e repartida pelos
+    proprietários. Frações que já têm quota neste mês não são tocadas, a não ser com
+    force: nesse caso os valores são recalculados (os pagamentos já registados mantêm-se)."""
     ref_month_start = reference_month.replace(day=1)
 
-    condo = db.query(models.Condominium).filter(models.Condominium.id == condominium_id).first()
+    # bloqueia o condomínio durante a geração: dois cliques seguidos não duplicam quotas
+    condo = db.query(models.Condominium).filter(models.Condominium.id == condominium_id).with_for_update().first()
     if not condo:
         raise QuotaGenerationError("Condomínio não encontrado.")
 
@@ -209,68 +279,113 @@ def generate_monthly_quotas(
                 models.Quota.kind == "regular")
         .all()
     )
-    if existing and not force:
-        return {
-            "created": 0,
-            "skipped_existing": True,
-            "existing_count": len(existing),
-            "message": f"Já existem {len(existing)} quotas mensais geradas para este mês.",
-        }
+    by_fraction = {}
+    for q in existing:
+        by_fraction.setdefault(q.fraction_id, []).append(q)
 
     fractions, lines, budget = compute_monthly_lines(db, condominium_id, ref_month_start)
-
-    paid = [q for q in existing if float(q.amount_paid or 0) > 0 or q.payments]
-    if paid and force:
-        raise QuotaGenerationError(
-            f"{len(paid)} das quotas deste mês já têm pagamentos registados: não é possível substituí-las."
-        )
-    if existing and force:
-        for q in existing:
-            db.query(models.ReminderLog).filter(models.ReminderLog.quota_id == q.id).delete(synchronize_session=False)
-        for q in existing:
-            db.delete(q)
-        db.flush()
-
     due_date = _due_date(ref_month_start, due_day)
-    created = []
-    grand_total = Decimal("0")
-    for fraction in fractions:
-        flines = lines.get(fraction.id) or []
-        amount = sum((a for _, a in flines), Decimal("0"))
-        if amount <= 0:
-            continue
+    created, updated, removed, kept_fractions = [], 0, 0, []
+
+    def new_quota(fraction, link, qlines):
         quota = models.Quota(
-            fraction_id=fraction.id,
-            budget_id=budget.id if budget else None,
-            reference_month=ref_month_start,
-            due_date=due_date,
-            base_amount=amount,
-            status=models.QuotaStatus.pending,
-            kind="regular",
+            fraction_id=fraction.id, budget_id=budget.id if budget else None, reference_month=ref_month_start,
+            due_date=due_date, base_amount=0, status=models.QuotaStatus.pending, kind="regular",
+            owner_link_id=link.id if link else None, billed_to=link_name(link),
         )
-        for i, (ct, a) in enumerate(flines):
-            quota.lines.append(models.QuotaLine(charge_type_id=ct.id, name=ct.name, category=ct.category, amount=a, position=i))
+        _set_lines(quota, qlines)
         db.add(quota)
         created.append(quota)
-        grand_total += amount
 
+    for fraction in fractions:
+        flines = [((ct.id, ct.name, ct.category), a) for ct, a in (lines.get(fraction.id) or [])]
+        wanted = split_lines(flines, billing_targets(fraction))
+        ex = by_fraction.get(fraction.id, [])
+        if not ex:
+            for link, qlines in wanted:
+                new_quota(fraction, link, qlines)
+            continue
+        if not force:
+            continue
+        # recalcular: casa as quotas existentes com os responsáveis atuais
+        pairs, free = [], list(ex)
+        if len(wanted) == 1 and len(ex) == 1:
+            pairs, free = [(wanted[0], ex[0])], []
+        else:
+            for w in wanted:
+                match = next((q for q in free if q.owner_link_id == (w[0].id if w[0] else None)), None)
+                if match:
+                    free.remove(match)
+                pairs.append((w, match))
+        if any(_has_payments(q) for q in free):
+            # a repartição mudou e já há pagamentos nas quotas antigas: não mexe nesta fração
+            kept_fractions.append(fraction.identifier)
+            continue
+        for q in free:
+            _delete_quota(db, q)
+            removed += 1
+        for (link, qlines), q in pairs:
+            if q is None:
+                new_quota(fraction, link, qlines)
+                continue
+            _set_lines(q, qlines)
+            q.owner_link_id = link.id if link else None
+            q.billed_to = link_name(link)
+            q.budget_id = budget.id if budget else q.budget_id
+            if not _has_payments(q):
+                q.due_date = due_date
+            recompute_status(q)
+            updated += 1
+
+    if existing and not force and not created:
+        db.rollback()
+        return {
+            "created": 0, "updated": 0,
+            "skipped_existing": True,
+            "existing_count": len(existing),
+            "message": f"Todas as frações já têm quota mensal neste mês ({len(existing)} quotas).",
+        }
+
+    db.flush()
+    grand_total = sum((Decimal(str(q.base_amount)) for q in created), Decimal("0"))
     db.add(models.AuditLog(
         condominium_id=condominium_id,
         action="quota.generated",
         entity_type="budget",
         entity_id=str(budget.id) if budget else None,
-        details={"reference_month": ref_month_start.isoformat(), "count": len(created), "total": float(grand_total)},
+        details={"reference_month": ref_month_start.isoformat(), "count": len(created), "updated": updated,
+                 "removed": removed, "total": float(grand_total)},
     ))
     db.commit()
 
     return {
         "created": len(created),
+        "updated": updated,
+        "removed": removed,
+        "kept_fractions": kept_fractions,
+        "existing_count": len(existing),
         "skipped_existing": False,
         "reference_month": ref_month_start.isoformat(),
         "due_date": due_date.isoformat(),
         "monthly_total": float(grand_total),
         "quota_ids": [q.id for q in created],
     }
+
+
+def _create_split(db, fraction, name, category, charge_type_id, amount, ref, due_date, kind, mode=None, owner_link_id=None) -> list:
+    """Cria a cobrança de uma fração, repartida pelos responsáveis."""
+    out = []
+    for link, qlines in split_lines([((charge_type_id, name, category), amount)], billing_targets(fraction, mode, owner_link_id)):
+        quota = models.Quota(
+            fraction_id=fraction.id, reference_month=ref, due_date=due_date, base_amount=0,
+            status=models.QuotaStatus.pending, kind=kind, description=name,
+            owner_link_id=link.id if link else None, billed_to=link_name(link),
+        )
+        _set_lines(quota, qlines)
+        recompute_status(quota)
+        db.add(quota)
+        out.append(quota)
+    return out
 
 
 def launch_extra_quota(
@@ -302,13 +417,7 @@ def launch_extra_quota(
         a = amounts.get(f.id)
         if not a:
             continue
-        quota = models.Quota(
-            fraction_id=f.id, reference_month=ref, due_date=due_date, base_amount=a,
-            status=models.QuotaStatus.pending, kind="extraordinary", description=name,
-        )
-        quota.lines.append(models.QuotaLine(charge_type_id=charge_type.id, name=name, category=charge_type.category, amount=a, position=0))
-        db.add(quota)
-        created.append(quota)
+        created += _create_split(db, f, name, charge_type.category, charge_type.id, a, ref, due_date, "extraordinary")
     if not created:
         raise QuotaGenerationError("Todas as frações selecionadas estão isentas desta rubrica.")
     db.add(models.AuditLog(
@@ -317,3 +426,27 @@ def launch_extra_quota(
     ))
     db.commit()
     return {"created": len(created), "total": float(sum(amounts.values()))}
+
+
+def create_invoice(db: Session, condominium_id: str, fraction, description: str, amount: Decimal,
+                   due_date: date, reference_month: date = None, responsible: str = None, user_id: str = None) -> list:
+    """Fatura avulsa a uma fração, com o valor indicado. responsible: None = como a fração
+    está configurada; "split" = repartida pelos proprietários; ou o id do proprietário que paga tudo."""
+    amount = _round2(Decimal(str(amount)))
+    if amount <= 0:
+        raise QuotaGenerationError("Indica o valor da fatura.")
+    mode, link_id = None, None
+    if responsible == "split":
+        mode = "split"
+    elif responsible:
+        if not any(l.id == responsible for l in active_links(fraction)):
+            raise QuotaGenerationError("O responsável indicado não é proprietário desta fração.")
+        mode, link_id = "single", responsible
+    ref = (reference_month or due_date).replace(day=1)
+    created = _create_split(db, fraction, description, "outra", None, amount, ref, due_date, "invoice", mode, link_id)
+    db.add(models.AuditLog(
+        condominium_id=condominium_id, user_id=user_id, action="quota.invoice_created", entity_type="fraction",
+        entity_id=str(fraction.id), details={"description": description, "amount": float(amount), "count": len(created)},
+    ))
+    db.commit()
+    return created

@@ -11,7 +11,7 @@ from .. import models, schemas
 from ..database import get_db
 from ..auth import require_condo_admin, require_admin
 from ..services.storage import update_auth_email, invite_user, StorageError
-from ..services.ownership import rebalance_on_add, set_share, normalize
+from ..services.ownership import rebalance_on_add, set_share, normalize, require_shared_confirmation
 from ..services.purge import remove_owner_from_condo, delete_orphan_owners
 
 router = APIRouter(prefix="/condominiums/{condominium_id}/owners", tags=["Condóminos"])
@@ -144,6 +144,7 @@ def add_owner(
     fica associado — a ficha dele não é alterada. Quando a pessoa criar conta com este
     email, fica automaticamente ligada a esta ficha."""
     fraction = _fraction_in_condo(db, condominium_id, payload.fraction_id)
+    require_shared_confirmation(db, fraction, payload.confirm_shared)
     email = payload.email.strip().lower()
     user = _find_user_by_email(db, email)
     if user is None:
@@ -204,6 +205,7 @@ def assign_fraction(
     ).first()
     if already:
         raise HTTPException(409, f"{user.full_name} já está associado à fração {fraction.identifier}.")
+    require_shared_confirmation(db, fraction, payload.confirm_shared)
     link = models.FractionOwner(
         fraction_id=fraction.id, user_id=user.id, ownership_share=1, is_primary_contact=payload.is_primary_contact,
     )
@@ -244,6 +246,10 @@ def update_fraction_link(
         ).first()
         if clash:
             raise HTTPException(409, f"Este condómino já está associado à fração {new_fraction.identifier}.")
+        require_shared_confirmation(db, new_fraction, payload.confirm_shared, exclude_link_id=link.id)
+        # as cobranças já emitidas ficam na fração antiga (o nome do responsável fica guardado)
+        db.query(models.Quota).filter(models.Quota.owner_link_id == link.id).update(
+            {models.Quota.owner_link_id: None}, synchronize_session=False)
         link.fraction_id = new_fraction.id
         link.ownership_share = 1
         db.flush()

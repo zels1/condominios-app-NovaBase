@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../lib/api'
+import { api, withSharedConfirm } from '../lib/api'
 import { useCondo } from '../lib/CondoContext'
 import FilePicker from '../components/FilePicker'
 import { DOC_ACCEPT, DOC_MAX_MB, checkDocFile, uploadDocFile } from '../lib/files'
@@ -164,7 +164,7 @@ function FractionCard({ fraction, condoId, expanded, onToggle, editing, onEdit, 
     }), `Fração ${editForm.identifier.trim()} atualizada.`).then((ok) => ok && onEdit())
   }
   const invite = () => newOwnerEmail && run(async () => {
-    await api.post(`${base}/owners`, { email: newOwnerEmail.trim(), is_primary_contact: owners.length === 0 })
+    await withSharedConfirm((c) => api.post(`${base}/owners`, { email: newOwnerEmail.trim(), is_primary_contact: owners.length === 0, confirm_shared: c }))
     setNewOwnerEmail('')
   })
   const removeOwner = (o) => {

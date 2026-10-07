@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..database import get_db
-from ..auth import get_current_user, require_condo_member, get_user_fraction_ids
+from ..auth import get_current_user, require_condo_member, owner_can_see_quota
 from ..services.receipts import build_quota_receipt, receipt_number, MONTHS
 
 router = APIRouter(prefix="/condominiums/{condominium_id}", tags=["Conta corrente e recibos"])
@@ -140,7 +140,7 @@ def quota_receipt(
     )
     if not quota:
         raise HTTPException(404, "Quota não encontrada.")
-    if not is_admin and quota.fraction_id not in get_user_fraction_ids(db, user):
+    if not is_admin and not owner_can_see_quota(db, user, quota):
         raise HTTPException(403, "Sem acesso a esta quota.")
     payments = db.query(models.Payment).filter(models.Payment.quota_id == quota.id).order_by(models.Payment.paid_at).all()
     condo = db.query(models.Condominium).filter(models.Condominium.id == condominium_id).first()
@@ -148,6 +148,10 @@ def quota_receipt(
     primary = next((o for o in fraction.owners if o.is_primary_contact and o.user), None) \
         or next((o for o in fraction.owners if o.user), None)
     owner = user if (not is_admin and any(o.user_id == user.id for o in fraction.owners)) else (primary.user if primary else None)
+    if quota.owner_link and quota.owner_link.user:
+        owner = quota.owner_link.user  # cobrança emitida em nome de um comproprietário
+    elif quota.owner_link_id is None and quota.billed_to and is_admin:
+        owner = next((o.user for o in fraction.owners if o.user and o.user.full_name == quota.billed_to), owner)
     pdf = build_quota_receipt(condo, fraction, owner, quota, payments)
     prefix = "recibo" if payments else "aviso"
     filename = f"{prefix}-{receipt_number(quota)}-{fraction.identifier}.pdf".replace(" ", "").replace("/", "-").replace("º", "")

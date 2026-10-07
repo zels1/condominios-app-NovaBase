@@ -12,7 +12,7 @@ from ..auth import get_current_user, require_condo_admin, require_condo_member, 
 from ..services.storage import signed_url, delete_file, StorageError, STORAGE_PREFIX, DOCUMENT_BUCKET
 from ..services.purge import delete_fraction, fraction_summary, delete_orphan_owners
 from ..services.fraction_ids import find_equivalent
-from ..services.ownership import rebalance_on_add, normalize
+from ..services.ownership import rebalance_on_add, normalize, require_shared_confirmation
 
 
 def _get_fraction(db: Session, condominium_id: str, fraction_id: str) -> models.Fraction:
@@ -119,6 +119,30 @@ def update_fraction(
     except HTTPException:
         db.rollback()
         raise
+    db.commit()
+    db.refresh(fraction)
+    return fraction
+
+
+@router.put("/{fraction_id}/billing", response_model=schemas.FractionOut)
+def update_fraction_billing(
+    condominium_id: str,
+    fraction_id: str,
+    payload: schemas.FractionBillingUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_condo_admin),
+):
+    """Com vários proprietários: repartir as cobranças por eles (split) ou cobrar tudo a um só (single)."""
+    fraction = _get_fraction(db, condominium_id, fraction_id)
+    if payload.billing_mode not in ("split", "single"):
+        raise HTTPException(400, "Opção inválida: usa split ou single.")
+    link_id = None
+    if payload.billing_mode == "single" and payload.billing_owner_link_id:
+        if not any(l.id == payload.billing_owner_link_id for l in fraction.owners):
+            raise HTTPException(400, "O responsável indicado não é proprietário desta fração.")
+        link_id = payload.billing_owner_link_id
+    fraction.billing_mode = payload.billing_mode
+    fraction.billing_owner_link_id = link_id
     db.commit()
     db.refresh(fraction)
     return fraction
@@ -268,6 +292,7 @@ def add_owner(
         models.FractionOwner.fraction_id == fraction_id, models.FractionOwner.user_id == owner_user_id
     ).first():
         raise HTTPException(409, "Esse condómino já está associado a esta fração.")
+    require_shared_confirmation(db, fraction, payload.confirm_shared)
     link = models.FractionOwner(
         fraction_id=fraction_id,
         user_id=owner_user_id,

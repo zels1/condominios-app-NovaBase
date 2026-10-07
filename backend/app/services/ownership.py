@@ -6,6 +6,7 @@ reduzindo os outros na mesma proporção. Ao retirar um, os restantes ficam com 
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from .. import models
@@ -75,3 +76,21 @@ def normalize(db: Session, fraction_id: str):
         _assign(links, [Decimal("1") / len(links)] * len(links))
     else:
         _assign(links, [Decimal(str(l.ownership_share or 0)) / total for l in links])
+
+
+def require_shared_confirmation(db: Session, fraction, confirmed: bool, exclude_link_id=None):
+    """Uma fração que já tem proprietário só recebe outro com confirmação explícita
+    (evita associar por engano uma fração que já é de outra pessoa)."""
+    if confirmed:
+        return
+    current = [l for l in _current_links(db, fraction.id) if l.id != exclude_link_id]
+    if not current:
+        return
+    names = [(l.user.full_name if l.user else l.invited_email) or "proprietário sem nome" for l in current]
+    raise HTTPException(409, {
+        "code": "fraction_has_owner",
+        "message": f"A fração {fraction.identifier} já tem proprietário: {', '.join(names)}. "
+                   "Confirma se queres juntar mais um (ficam como comproprietários).",
+        "fraction": fraction.identifier,
+        "owners": names,
+    })

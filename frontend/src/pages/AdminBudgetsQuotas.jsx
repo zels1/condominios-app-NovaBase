@@ -7,6 +7,7 @@ import { useSort, SortTh } from '../components/SortableTable'
 import { QuotaTitle, linesText } from '../components/QuotaDetail'
 import { ChargeTypesPanel, MonthPreview } from './QuotaCharges'
 import Modal from '../components/Modal'
+import { FractionsTab, FractionAccount, InvoiceForm } from './FractionAccount'
 
 const STATUS_ORDER = { overdue: 0, partially_paid: 1, pending: 2, paid: 3, waived: 4 }
 const QUOTA_COLUMNS = {
@@ -37,6 +38,9 @@ export default function AdminBudgetsQuotas() {
   const [fractions, setFractions] = useState([])
   const [modal, setModal] = useState(null) // generate | extra | budget
   const [newChargeSignal, setNewChargeSignal] = useState(0)
+  const [openFraction, setOpenFraction] = useState(null) // id da fração com a conta aberta
+  const [invoiceFor, setInvoiceFor] = useState(undefined) // undefined = fechado; null = escolher fração; id = fração fixa
+  const [accountKey, setAccountKey] = useState(0)
   const [notice, setNotice] = useState(null)
   const [feeRun, setFeeRun] = useState(null)
   const [feeRunBusy, setFeeRunBusy] = useState(false)
@@ -58,6 +62,7 @@ export default function AdminBudgetsQuotas() {
   }
 
   async function loadBudgets() { setBudgets(await api.get(`/condominiums/${selectedCondo.id}/budgets`)) }
+  function loadFractions() { return api.get(`/condominiums/${selectedCondo.id}/fractions`).then(setFractions).catch(() => {}) }
   async function loadQuotas() {
     const list = await api.get(`/condominiums/${selectedCondo.id}/quotas`)
     setQuotas(list)
@@ -69,7 +74,8 @@ export default function AdminBudgetsQuotas() {
     if (!selectedCondo) return
     setNotice(null); setFMonth(''); setFStatus(''); setFKind(''); setFText('')
     loadBudgets(); loadQuotas()
-    api.get(`/condominiums/${selectedCondo.id}/fractions`).then(setFractions).catch(() => {})
+    loadFractions()
+    setOpenFraction(null); setInvoiceFor(undefined)
   }, [selectedCondo])
 
   const months = [...new Set(quotas.map((q) => q.reference_month.slice(0, 7)))].sort().reverse()
@@ -101,6 +107,7 @@ export default function AdminBudgetsQuotas() {
         </div>
         <div className="row" style={{ gap: '.4rem' }}>
           <button className="btn secondary" onClick={() => { setTab('charges'); setNewChargeSignal((n) => n + 1) }}>+ Nova quota</button>
+          <button className="btn secondary" onClick={() => setInvoiceFor(null)}>+ Fatura</button>
           <button className="btn" onClick={() => setModal('generate')}>⚡ Gerar quotas</button>
         </div>
       </div>
@@ -127,6 +134,7 @@ export default function AdminBudgetsQuotas() {
 
       <div className="tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'quotas'} className={tab === 'quotas' ? 'active' : ''} onClick={() => setTab('quotas')}>Quotas emitidas</button>
+        <button role="tab" aria-selected={tab === 'fractions'} className={tab === 'fractions' ? 'active' : ''} onClick={() => setTab('fractions')}>Por fração</button>
         <button role="tab" aria-selected={tab === 'charges'} className={tab === 'charges' ? 'active' : ''} onClick={() => setTab('charges')}>Quotas e rubricas</button>
         <button role="tab" aria-selected={tab === 'budgets'} className={tab === 'budgets' ? 'active' : ''} onClick={() => setTab('budgets')}>Orçamentos anuais</button>
       </div>
@@ -135,6 +143,8 @@ export default function AdminBudgetsQuotas() {
         <ChargeTypesPanel condoId={selectedCondo.id} fractions={fractions} newSignal={newChargeSignal}
           onLaunched={async (text) => { setNotice({ type: 'success', text }); setTab('quotas'); setFKind(''); await loadQuotas() }} />
       )}
+
+      {tab === 'fractions' && <FractionsTab fractions={fractions} quotas={quotas} onOpen={setOpenFraction} />}
 
       {tab === 'budgets' && (
         <div className="card">
@@ -189,6 +199,7 @@ export default function AdminBudgetsQuotas() {
                 <option value="">Todas</option>
                 <option value="regular">Mensais</option>
                 <option value="extraordinary">Extraordinárias</option>
+                <option value="invoice">Faturas</option>
               </select>
             </div>
             <div className="field" style={{ flex: 1, minWidth: 160 }}>
@@ -217,7 +228,7 @@ export default function AdminBudgetsQuotas() {
                 <th></th>
               </tr></thead>
               <tbody>
-                {qSort.sorted.map((q) => <QuotaRow key={q.id} quota={q} condoId={selectedCondo.id} onChanged={loadQuotas} />)}
+                {qSort.sorted.map((q) => <QuotaRow key={q.id} quota={q} condoId={selectedCondo.id} onChanged={loadQuotas} onOpenFraction={setOpenFraction} />)}
                 {quotas.length === 0 && <tr><td colSpan={9} className="empty">Ainda não há quotas. Carrega em "⚡ Gerar quotas".</td></tr>}
                 {quotas.length > 0 && filtered.length === 0 && <tr><td colSpan={9} className="empty">Nenhuma quota corresponde aos filtros.</td></tr>}
               </tbody>
@@ -230,6 +241,23 @@ export default function AdminBudgetsQuotas() {
         <Modal title="Gerar quotas do mês" wide onClose={() => setModal(null)}>
           <GenerateForm condoId={selectedCondo.id} onCancel={() => setModal(null)}
             onDone={async (text, month) => { setModal(null); setNotice({ type: 'success', text }); setTab('quotas'); await loadQuotas(); setFMonth(month) }} />
+        </Modal>
+      )}
+      {openFraction && fractions.find((f) => f.id === openFraction) && (
+        <Modal title={`Fração ${fractions.find((f) => f.id === openFraction).identifier}`} wide="x" onClose={() => setOpenFraction(null)}>
+          <FractionAccount condoId={selectedCondo.id} fraction={fractions.find((f) => f.id === openFraction)} refreshKey={accountKey}
+            onChanged={async () => { await Promise.all([loadQuotas(), loadFractions()]) }}
+            onInvoice={() => setInvoiceFor(openFraction)} />
+        </Modal>
+      )}
+      {invoiceFor !== undefined && (
+        <Modal title="Emitir fatura" onClose={() => setInvoiceFor(undefined)}>
+          <InvoiceForm condoId={selectedCondo.id} fractions={fractions} fractionId={invoiceFor || undefined} onCancel={() => setInvoiceFor(undefined)}
+            onDone={async (text) => {
+              setInvoiceFor(undefined); setAccountKey((k) => k + 1)
+              if (!openFraction) { setNotice({ type: 'success', text }); setTab('quotas'); setFKind('') }
+              await loadQuotas()
+            }} />
         </Modal>
       )}
       {modal === 'budget' && (
@@ -253,10 +281,18 @@ function GenerateForm({ condoId, onCancel, onDone }) {
     try {
       const result = await api.post(`/condominiums/${condoId}/quotas/generate`, { reference_month: `${month}-01`, due_day: parseInt(dueDay), force })
       if (result.skipped_existing) {
-        setMsg({ type: 'warn', text: `${result.message} Queres substituí-las?` })
+        // nada em falta: só pergunta se é para recalcular (nunca apaga pagamentos)
+        setMsg({ type: 'warn', text: `${result.message} Não há nada em falta. Se mudaste rubricas, valores ou proprietários, podes atualizar os valores destas quotas — os pagamentos já registados mantêm-se.` })
       } else {
         const label = new Date(`${month}-01T00:00:00`).toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' })
-        await onDone(`${result.created} quotas de ${label} geradas (total: ${money(result.monthly_total)}).`, month)
+        const parts = []
+        if (result.created) parts.push(`${result.created} quota(s) criada(s)`)
+        if (result.updated) parts.push(`${result.updated} atualizada(s)`)
+        if (result.removed) parts.push(`${result.removed} retirada(s) por a repartição ter mudado`)
+        if (!force && result.existing_count) parts.push(`${result.existing_count} já existiam e ficaram como estavam`)
+        let text = `Quotas de ${label}: ${parts.join(', ') || 'sem alterações'}.`
+        if (result.kept_fractions?.length) text += ` Não alterada(s) por já ter(em) pagamentos com outra repartição: ${result.kept_fractions.join(', ')}.`
+        await onDone(text, month)
         return
       }
     } catch (err) { setMsg({ type: 'error', text: err.message }) }
@@ -265,11 +301,11 @@ function GenerateForm({ condoId, onCancel, onDone }) {
 
   return (
     <div className="stack">
-      <p className="hint" style={{ margin: 0 }}>Cria a quota do mês de cada fração com as quotas e rubricas recorrentes que se aplicam a esse mês (separador Quotas e rubricas). Confere a pré-visualização antes de gerar.</p>
+      <p className="hint" style={{ margin: 0 }}>Cria a quota do mês de cada fração com as quotas e rubricas recorrentes que se aplicam a esse mês (separador Quotas e rubricas). Frações com vários proprietários recebem uma quota por proprietário, na proporção de cada um (ou só o responsável, se assim estiver definido na fração). Só são criadas as que faltam.</p>
       <div className="row form-row">
         <div className="field" style={{ width: 180 }}>
           <label htmlFor="gen-month">Mês de referência</label>
-          <input id="gen-month" type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+          <input id="gen-month" type="month" value={month} onChange={(e) => { setMonth(e.target.value); setMsg(null) }} />
         </div>
         <div className="field" style={{ width: 150 }}>
           <label htmlFor="gen-due">Dia de vencimento</label>
@@ -279,14 +315,18 @@ function GenerateForm({ condoId, onCancel, onDone }) {
       <strong style={{ fontSize: '.9rem' }}>Pré-visualização</strong>
       {month && <MonthPreview condoId={condoId} month={month} />}
       {msg && (
-        <div className={`msg ${msg.type === 'error' || msg.type === 'warn' ? 'error' : 'success'}`}>
+        <div className={`msg ${msg.type === 'error' ? 'error' : msg.type === 'warn' ? 'warn' : 'success'}`}>
           {msg.text}
-          {msg.type === 'warn' && <button className="btn secondary small" style={{ marginLeft: '.6em' }} disabled={busy} onClick={() => generate(true)}>Substituir</button>}
+          {msg.type === 'warn' && (
+            <div style={{ marginTop: '.5rem' }}>
+              <button type="button" className="btn small" disabled={busy} onClick={() => generate(true)}>{busy ? 'A atualizar…' : 'Atualizar valores'}</button>
+            </div>
+          )}
         </div>
       )}
       <div className="modal-actions">
         <button type="button" className="btn secondary small" onClick={onCancel}>Cancelar</button>
-        <button type="button" className="btn small" disabled={busy} onClick={() => generate(false)}>{busy ? 'A gerar…' : 'Gerar quotas'}</button>
+        {msg?.type !== 'warn' && <button type="button" className="btn small" disabled={busy} onClick={() => generate(false)}>{busy ? 'A gerar…' : 'Gerar quotas'}</button>}
       </div>
     </div>
   )
@@ -331,7 +371,7 @@ function BudgetForm({ condoId, onCancel, onDone }) {
   )
 }
 
-function QuotaRow({ quota, condoId, onChanged }) {
+function QuotaRow({ quota, condoId, onChanged, onOpenFraction }) {
   const [showPay, setShowPay] = useState(false)
   const [showFee, setShowFee] = useState(false)
   const [amount, setAmount] = useState('')
@@ -351,7 +391,7 @@ function QuotaRow({ quota, condoId, onChanged }) {
   return (
     <>
       <tr>
-        <td>{quota.fraction_identifier}</td>
+        <td><button type="button" className="link-button" title="Abrir a conta desta fração" onClick={() => onOpenFraction(quota.fraction_id)}>{quota.fraction_identifier}</button></td>
         <td>{quota.owner_name || '—'}</td>
         <td style={{ minWidth: 150 }}><QuotaTitle quota={quota} showLines={false} /></td>
         <td>{new Date(quota.due_date).toLocaleDateString('pt-PT')}</td>
@@ -380,7 +420,7 @@ function QuotaRow({ quota, condoId, onChanged }) {
             {Number(quota.amount_paid) === 0 && (
               <button className="btn secondary small" title="Apagar esta quota (lançada por engano)" aria-label="Apagar quota"
                 onClick={async () => {
-                  if (!window.confirm(`Apagar a quota de ${quota.fraction_identifier} (${quota.kind === 'extraordinary' ? quota.description : new Date(quota.reference_month).toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' })})?`)) return
+                  if (!window.confirm(`Apagar a quota de ${quota.fraction_identifier} (${quota.kind !== 'regular' ? quota.description : new Date(quota.reference_month).toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' })})?`)) return
                   try { await api.del(`/condominiums/${condoId}/quotas/${quota.id}`); await onChanged() } catch (e) { alert(e.message) }
                 }}>✕</button>
             )}

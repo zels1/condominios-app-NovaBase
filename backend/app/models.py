@@ -114,6 +114,10 @@ class Fraction(Base):
     insurance_policy_number = Column(String, nullable=True)
     insurance_valid_until = Column(Date, nullable=True)
     insurance_document_url = Column(String, nullable=True)  # ficheiro da apólice (sb://… privado)
+    # Cobrança quando há vários proprietários: split = cada um recebe a sua parte (quota de
+    # propriedade); single = um só responsável paga tudo (billing_owner_link_id, ou o contacto principal)
+    billing_mode = Column(String, default="split", nullable=False, server_default="split")
+    billing_owner_link_id = Column(UUID(as_uuid=False), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     condominium = relationship("Condominium", back_populates="fractions")
@@ -194,19 +198,22 @@ class Quota(Base):
     late_fee_waived = Column(Boolean, default=False)
     generated_at = Column(DateTime, default=datetime.utcnow)
     # regular = quota mensal (ordinária + fundo de reserva + outras rubricas periódicas);
-    # extraordinary = quota lançada à parte (obras, despesa pontual…)
+    # extraordinary = quota lançada à parte (obras, despesa pontual…); invoice = fatura avulsa a uma fração
     kind = Column(String, default="regular", nullable=False)
     description = Column(String, nullable=True)
+    # proprietário responsável por esta cobrança (compropriedade: uma por proprietário);
+    # nulo = cobrança da fração como um todo. billed_to guarda o nome à data da emissão.
+    owner_link_id = Column(UUID(as_uuid=False), ForeignKey("fraction_owners.id", ondelete="SET NULL"), nullable=True)
+    billed_to = Column(String, nullable=True)
 
     fraction = relationship("Fraction", back_populates="quotas")
+    owner_link = relationship("FractionOwner", foreign_keys=[owner_link_id])
     payments = relationship("Payment", back_populates="quota", cascade="all, delete-orphan")
     reminders_sent = relationship("ReminderLog", back_populates="quota", cascade="all, delete-orphan")
     lines = relationship("QuotaLine", back_populates="quota", cascade="all, delete-orphan", order_by="QuotaLine.position")
 
     __table_args__ = (
-        # uma única quota mensal por fração e mês; as extraordinárias podem ser várias
-        Index("uq_quota_regular_month", "fraction_id", "reference_month", unique=True,
-              postgresql_where=text("kind = 'regular'")),
+        Index("ix_quota_fraction_month", "fraction_id", "reference_month"),
         Index("ix_quota_status", "status"),
         Index("ix_quota_due_date", "due_date"),
     )

@@ -1,6 +1,6 @@
 const QUOTA_LABELS = {
   pending: ['Pendente', ''],
-  paid: ['Paga', 'ok'],
+  paid: ['Paga', 'income'],
   partially_paid: ['Pagamento parcial', 'warn'],
   overdue: ['Em atraso', 'danger'],
   waived: ['Perdoada', 'ok'],

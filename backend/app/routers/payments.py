@@ -6,7 +6,7 @@ from typing import List
 
 from .. import models, schemas
 from ..database import get_db
-from ..auth import get_current_user, require_condo_admin, get_user_fraction_ids, require_condo_member
+from ..auth import get_current_user, require_condo_admin, require_condo_member, owner_can_see_quota
 from ..services.late_fee_engine import recompute_status
 
 router = APIRouter(prefix="/condominiums/{condominium_id}/quotas/{quota_id}/payments", tags=["Pagamentos"])
@@ -53,9 +53,9 @@ def list_payments(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    require_condo_member(db, user, condominium_id)
+    is_admin = require_condo_member(db, user, condominium_id)
     quota = _get_quota(db, condominium_id, quota_id)
-    if user.role == models.UserRole.owner and quota.fraction_id not in get_user_fraction_ids(db, user):
+    if not is_admin and not owner_can_see_quota(db, user, quota):
         raise HTTPException(403, "Sem acesso a esta quota.")
     return db.query(models.Payment).filter(models.Payment.quota_id == quota_id).order_by(models.Payment.paid_at.desc()).all()
 

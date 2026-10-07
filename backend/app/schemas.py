@@ -121,6 +121,13 @@ class FractionOut(ORMBase):
     insurance_policy_number: Optional[str] = None
     insurance_valid_until: Optional[date] = None
     has_insurance_document: bool = False
+    billing_mode: Optional[str] = "split"  # split = repartir pelos proprietários; single = um só responsável
+    billing_owner_link_id: Optional[str] = None
+
+
+class FractionBillingUpdate(BaseModel):
+    billing_mode: str  # split | single
+    billing_owner_link_id: Optional[str] = None  # em single: o responsável (vazio = contacto principal)
 
 
 class FractionOwnerCreate(BaseModel):
@@ -131,6 +138,7 @@ class FractionOwnerCreate(BaseModel):
     email: Optional[EmailStr] = None
     ownership_share: Optional[float] = Field(None, gt=0, le=1)  # vazio = repartir por igual
     is_primary_contact: bool = True
+    confirm_shared: bool = False  # confirmar que a fração passa a ter mais de um proprietário
 
 
 class FractionOwnerOut(ORMBase):
@@ -182,6 +190,7 @@ class OwnerFractionAssign(BaseModel):
     fraction_id: str
     ownership_share: Optional[float] = Field(None, gt=0, le=1)  # vazio = repartir por igual
     is_primary_contact: bool = True
+    confirm_shared: bool = False
 
 
 class PlatformOwnerCondo(BaseModel):
@@ -221,6 +230,7 @@ class OwnerCreate(OwnerProfile):
     ownership_share: Optional[float] = Field(None, gt=0, le=1)  # vazio = repartir por igual com os outros proprietários
     is_primary_contact: bool = True
     send_invite: bool = False  # enviar convite por email para criar conta
+    confirm_shared: bool = False
 
 
 class FractionTransfer(BaseModel):
@@ -284,6 +294,8 @@ class QuotaOut(ORMBase):
     late_fee_applied_at: Optional[datetime] = None
     kind: str = "regular"
     description: Optional[str] = None
+    owner_link_id: Optional[str] = None
+    billed_to: Optional[str] = None
     lines: List[QuotaLineOut] = []
 
 
@@ -339,8 +351,20 @@ class ExtraQuotaCreate(BaseModel):
 
 class QuotaWithFraction(QuotaOut):
     fraction_identifier: Optional[str] = None
-    owner_name: Optional[str] = None
+    owner_name: Optional[str] = None  # responsável por esta cobrança
+    owner_user_id: Optional[str] = None
     total_due: Optional[float] = None
+    payments: Optional[List[dict]] = None  # só quando pedido (include_payments)
+
+
+class InvoiceCreate(BaseModel):
+    """Fatura avulsa a uma fração."""
+    fraction_id: str
+    description: str = Field(min_length=1, max_length=200)
+    amount: float = Field(gt=0, le=10000000)
+    due_date: date
+    reference_month: Optional[date] = None  # por defeito, o mês do vencimento
+    responsible: Optional[str] = None  # vazio = como a fração está configurada; "split"; ou id do proprietário
 
 
 # ---------- Payment ----------
