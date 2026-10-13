@@ -282,7 +282,7 @@ def add_owner(
         if existing:
             owner_user_id = existing.id
         else:
-            invited_email = payload.email
+            invited_email = payload.email.strip().lower()
     else:
         owner_user = db.query(models.User).filter(models.User.id == owner_user_id).first()
         if not owner_user:

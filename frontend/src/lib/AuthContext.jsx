@@ -72,11 +72,7 @@ export function AuthProvider({ children }) {
     user: session?.user ?? null,
     signInWithPassword: (email, password) =>
       withTimeout(supabase.auth.signInWithPassword({ email: email.trim(), password }), AUTH_TIMEOUT_MS),
-    signUp: (email, password, fullName) =>
-      withTimeout(
-        supabase.auth.signUp({ email: email.trim(), password, options: { data: { full_name: fullName } } }),
-        AUTH_TIMEOUT_MS
-      ),
+    // não há registo público: as contas são criadas pela administração do condomínio
     signOut: () => { setRecovery(false); return supabase.auth.signOut() },
     recovery,
     isInvite: authRedirect.isInvite,

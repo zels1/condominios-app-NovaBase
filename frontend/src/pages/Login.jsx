@@ -20,15 +20,14 @@ function saveRecent(list) {
 }
 
 export default function Login() {
-  const { signInWithPassword, signUp, requestPasswordReset, linkError } = useAuth()
-  const [mode, setMode] = useState('signin') // signin | signup | forgot
+  const { signInWithPassword, requestPasswordReset, linkError } = useAuth()
+  const [mode, setMode] = useState('signin') // signin | forgot (as contas são criadas pela administração)
   const [recent, setRecent] = useState(loadRecent)
   const [email, setEmail] = useState(() => loadRecent()[0] || '')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [remember, setRemember] = useState(true)
   const passwordRef = useRef(null)
-  const [fullName, setFullName] = useState('')
   const [error, setError] = useState(linkError)
   const [notice, setNotice] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -43,15 +42,10 @@ export default function Login() {
         // Não revelamos se o email existe ou não (evita descobrir quem tem conta)
         setNotice(`Se existir uma conta com ${email.trim()}, vais receber um email com um link para definir uma nova palavra-passe. Verifica também a pasta de spam.`)
         setMode('signin')
-      } else if (mode === 'signin') {
+      } else {
         const { error } = await signInWithPassword(email, password)
         if (error) throw error
         rememberEmail(email, remember)
-      } else {
-        const { error } = await signUp(email, password, fullName)
-        if (error) throw error
-        setNotice('Conta criada! Verifica o teu email para confirmar (se a confirmação estiver ativa) e depois inicia sessão.')
-        setMode('signin')
       }
     } catch (err) {
       setError(friendlyAuthError(err))
@@ -95,7 +89,6 @@ export default function Login() {
         </div>
         <p style={{ color: 'var(--text-muted)' }}>
           {mode === 'signin' && 'Inicia sessão para continuar.'}
-          {mode === 'signup' && 'Cria a tua conta.'}
           {mode === 'forgot' && 'Indica o teu email e enviamos-te um link para definires uma nova palavra-passe.'}
         </p>
 
@@ -119,16 +112,10 @@ export default function Login() {
         )}
 
         <form onSubmit={handleSubmit} className="stack">
-          {mode === 'signup' && (
-            <div className="field">
-              <label>Nome completo</label>
-              <input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
-            </div>
-          )}
           <div className="field">
             <label>Email</label>
             <input type="email" name="email" value={email} onChange={(e) => setEmail(e.target.value)} required
-              autoComplete={mode === 'signin' ? 'username' : 'email'} />
+              autoComplete="username" />
           </div>
           {mode !== 'forgot' && (
           <div className="field">
@@ -141,7 +128,7 @@ export default function Login() {
             <div className="password-wrap">
               <input ref={passwordRef} type={showPassword ? 'text' : 'password'} name="password" value={password}
                 onChange={(e) => setPassword(e.target.value)} required
-                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} minLength={6} />
+                autoComplete="current-password" />
               <button type="button" className="password-toggle" onClick={() => setShowPassword((v) => !v)}
                 aria-pressed={showPassword} aria-label={showPassword ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}>
                 {showPassword ? 'Ocultar' : 'Mostrar'}
@@ -156,20 +143,15 @@ export default function Login() {
             </label>
           )}
           <button className="btn block" disabled={busy}>
-            {busy ? 'A processar…' : mode === 'signin' ? 'Entrar' : mode === 'signup' ? 'Criar conta' : 'Enviar link de recuperação'}
+            {busy ? 'A processar…' : mode === 'signin' ? 'Entrar' : 'Enviar link de recuperação'}
           </button>
-          {mode === 'signup' && (
-            <p className="hint" style={{ margin: 0, textAlign: 'center' }}>
-              Ao criar conta, declaras que leste a <a href="/privacidade" target="_blank" rel="noreferrer">Política de privacidade</a>.
-            </p>
-          )}
         </form>
 
         <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '.9rem' }}>
           {mode === 'signin' ? (
-            <>Ainda não tens conta? <button type="button" className="link-button" onClick={() => switchMode('signup')}>Cria uma</button></>
+            <span className="hint">Não tens acesso? Pede-o à administração do teu condomínio.</span>
           ) : (
-            <>{mode === 'forgot' ? 'Lembraste-te?' : 'Já tens conta?'} <button type="button" className="link-button" onClick={() => switchMode('signin')}>Inicia sessão</button></>
+            <>Lembraste-te? <button type="button" className="link-button" onClick={() => switchMode('signin')}>Inicia sessão</button></>
           )}
         </p>
         <p className="hint" style={{ textAlign: 'center', margin: '.6rem 0 0' }}>

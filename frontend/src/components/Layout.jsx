@@ -78,12 +78,12 @@ export default function Layout() {
 
   if (loading) return <div className="empty">A carregar…</div>
   if (error) {
-    const disabled = /desativada/i.test(error)
+    const disabled = /desativada|não está registada|acesso foi apagado/i.test(error)
     return (
       <div className="auth-screen">
         <div className="card auth-card" style={{ textAlign: 'center' }}>
           <div className="auth-brand"><DomvusLogo size={30} /></div>
-          <h2 style={{ marginTop: 0 }}>{disabled ? 'Acesso desativado' : 'Não foi possível carregar os dados'}</h2>
+          <h2 style={{ marginTop: 0 }}>{disabled ? 'Sem acesso' : 'Não foi possível carregar os dados'}</h2>
           <p className="hint" style={{ fontSize: '.95rem' }}>{error}</p>
           <div className="row" style={{ justifyContent: 'center', gap: '.5rem' }}>
             {!disabled && <button className="btn" onClick={() => window.location.reload()}>Tentar outra vez</button>}

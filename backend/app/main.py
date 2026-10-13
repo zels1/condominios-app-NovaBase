@@ -110,6 +110,7 @@ MIGRATIONS = [
     "ALTER TABLE fractions ADD COLUMN IF NOT EXISTS billing_mode VARCHAR NOT NULL DEFAULT 'split'",
     'ALTER TABLE fractions ADD COLUMN IF NOT EXISTS billing_owner_link_id UUID',
     'CREATE INDEX IF NOT EXISTS ix_quota_fraction_month ON quotas (fraction_id, reference_month)',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS revoked_auth_id VARCHAR',
 ]
 
 
@@ -164,9 +165,33 @@ def run_migrations():
             raise RuntimeError(f"Não foi possível aplicar a alteração à base de dados: {sql}") from last_error
 
 
+def ensure_unique_emails():
+    """Um email = uma conta: índice único sem distinguir maiúsculas. Se já houver emails
+    repetidos na base de dados o índice não é criado (fica registado no log, para corrigir)
+    — a aplicação arranca na mesma."""
+    try:
+        with engine.begin() as conn:
+            if conn.execute(text("SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() "
+                                 "AND indexname = 'uq_users_email_lower'")).first():
+                return
+            conn.execute(text("UPDATE users SET email = lower(trim(email)) WHERE email <> lower(trim(email)) "
+                              "AND NOT EXISTS (SELECT 1 FROM users u2 WHERE u2.id <> users.id "
+                              "AND lower(trim(u2.email)) = lower(trim(users.email)))"))
+            dup = conn.execute(text("SELECT lower(trim(email)) FROM users GROUP BY 1 HAVING count(*) > 1")).fetchall()
+            if dup:
+                logger.warning("Emails repetidos na tabela users (corrigir manualmente): %s", ", ".join(r[0] for r in dup))
+                return
+            conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email_lower ON users (lower(email))"))
+            logger.warning("Migração aplicada: índice único de email (sem maiúsculas)")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Não foi possível criar o índice único de email: %s", exc)
+
+
 @app.on_event("startup")
 def on_startup():
     # Cria as tabelas que ainda não existam. Em produção prefira Alembic para
     # migrações controladas; isto é apenas uma rede de segurança para o arranque.
     Base.metadata.create_all(bind=engine)
     run_migrations()
+    ensure_unique_emails()

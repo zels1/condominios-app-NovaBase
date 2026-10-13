@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..auth import require_condo_admin, require_admin
-from ..services.storage import update_auth_email, invite_user, StorageError
+from ..services.storage import (update_auth_email, invite_user, StorageError, create_auth_user,
+                                set_auth_password, delete_auth_user, get_auth_user)
 from ..services.ownership import rebalance_on_add, set_share, normalize, require_shared_confirmation
 from ..services.purge import remove_owner_from_condo, delete_orphan_owners
 
@@ -263,6 +264,105 @@ def update_fraction_link(
     db.commit()
     db.refresh(link)
     return _fraction_link(link, new_fraction)
+
+
+# ---------- Acesso à aplicação (conta de login e palavra-passe) ----------
+def _manageable_owner(db: Session, condominium_id: str, user_id: str) -> models.User:
+    """Só condóminos (nunca administradores) com fração neste condomínio."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "Condómino não encontrado.")
+    if user.role != models.UserRole.owner:
+        raise HTTPException(403, "Este utilizador é administrador: só ele pode gerir o próprio acesso.")
+    linked = (
+        db.query(models.FractionOwner.id)
+        .join(models.Fraction, models.FractionOwner.fraction_id == models.Fraction.id)
+        .filter(models.Fraction.condominium_id == condominium_id, models.FractionOwner.user_id == user.id)
+        .first()
+    )
+    if not linked:
+        raise HTTPException(404, "Este condómino não está associado a nenhuma fração deste condomínio.")
+    return user
+
+
+def _audit(db, condominium_id, admin, action, user):
+    db.add(models.AuditLog(condominium_id=condominium_id, user_id=admin.id, action=action,
+                           entity_type="user", entity_id=user.id))
+
+
+@router.get("/{user_id}/account")
+def get_access(condominium_id: str, user_id: str, db: Session = Depends(get_db),
+               admin: models.User = Depends(require_condo_admin)):
+    user = _manageable_owner(db, condominium_id, user_id)
+    info = None
+    if user.supabase_user_id:
+        try:
+            info = get_auth_user(user.supabase_user_id)
+        except StorageError:
+            info = None
+    return {
+        "has_account": bool(user.supabase_user_id),
+        "email": user.email,
+        "is_active": user.is_active,
+        "last_sign_in_at": (info or {}).get("last_sign_in_at"),
+        "created_at": (info or {}).get("created_at"),
+    }
+
+
+@router.post("/{user_id}/account")
+def create_access(condominium_id: str, user_id: str, payload: schemas.AccessPassword,
+                  db: Session = Depends(get_db), admin: models.User = Depends(require_condo_admin)):
+    """Cria a conta de login do condómino com a palavra-passe definida pelo administrador
+    (o email fica logo confirmado). Se a pessoa já tiver conta, muda-lhe a palavra-passe."""
+    user = _manageable_owner(db, condominium_id, user_id)
+    try:
+        if user.supabase_user_id:
+            set_auth_password(user.supabase_user_id, payload.password)
+            sid = user.supabase_user_id
+        else:
+            sid = create_auth_user(user.email, payload.password, user.full_name)
+    except StorageError as e:
+        raise HTTPException(502, str(e))
+    other = db.query(models.User).filter(models.User.supabase_user_id == sid, models.User.id != user.id).first()
+    if other:
+        raise HTTPException(409, f"Essa conta de login já está ligada a outra ficha ({other.email}).")
+    user.supabase_user_id = sid
+    _audit(db, condominium_id, admin, "access.created", user)
+    db.commit()
+    return {"ok": True, "has_account": True}
+
+
+@router.put("/{user_id}/password")
+def change_password(condominium_id: str, user_id: str, payload: schemas.AccessPassword,
+                    db: Session = Depends(get_db), admin: models.User = Depends(require_condo_admin)):
+    user = _manageable_owner(db, condominium_id, user_id)
+    if not user.supabase_user_id:
+        raise HTTPException(409, "Este condómino ainda não tem acesso: cria primeiro o acesso.")
+    try:
+        set_auth_password(user.supabase_user_id, payload.password)
+    except StorageError as e:
+        raise HTTPException(502, str(e))
+    _audit(db, condominium_id, admin, "access.password_changed", user)
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/{user_id}/account")
+def delete_access(condominium_id: str, user_id: str, db: Session = Depends(get_db),
+                  admin: models.User = Depends(require_condo_admin)):
+    """Apaga só a conta de login: a ficha, as frações e o histórico do condómino ficam."""
+    user = _manageable_owner(db, condominium_id, user_id)
+    if not user.supabase_user_id:
+        return {"ok": True, "has_account": False}
+    try:
+        delete_auth_user(user.supabase_user_id)
+    except StorageError as e:
+        raise HTTPException(502, str(e))
+    user.revoked_auth_id = user.supabase_user_id
+    user.supabase_user_id = None
+    _audit(db, condominium_id, admin, "access.deleted", user)
+    db.commit()
+    return {"ok": True, "has_account": False}
 
 
 @router.post("/{user_id}/invite")

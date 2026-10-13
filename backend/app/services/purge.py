@@ -83,6 +83,12 @@ def delete_orphan_owners(db: Session, user_ids) -> int:
         ]
         if any(q.first() for q in refs):
             continue
+        if user.supabase_user_id:
+            try:  # a conta de login deixa de fazer sentido sem ficha
+                from .storage import delete_auth_user
+                delete_auth_user(user.supabase_user_id)
+            except Exception:  # noqa: BLE001 — nunca impede apagar a ficha
+                pass
         db.delete(user)
         removed += 1
     db.flush()

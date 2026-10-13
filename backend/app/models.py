@@ -40,6 +40,8 @@ class User(Base):
     role = Column(Enum(UserRole), nullable=False, default=UserRole.owner)
     # Supabase Auth trata da password; guardamos aqui o supabase_user_id de referência
     supabase_user_id = Column(String, unique=True, nullable=True)
+    # conta de login apagada pelo administrador: um token ainda válido dessa conta já não entra
+    revoked_auth_id = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
     # Ficha completa do condómino
     nif = Column(String, nullable=True)

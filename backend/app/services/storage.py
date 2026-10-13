@@ -158,6 +158,71 @@ def update_auth_email(supabase_user_id: str, new_email: str) -> None:
     raise StorageError(f"Não foi possível alterar o email de login (erro {status}: {text[:200]}).")
 
 
+def _password_error(status: int, text: str) -> str:
+    low = text.lower()
+    if "weak" in low or "should be at least" in low or "password" in low and status == 422:
+        return "Palavra-passe recusada pelo Supabase: é demasiado curta ou fraca. Usa pelo menos 8 caracteres, com letras e números."
+    return f"O Supabase recusou o pedido (erro {status}: {text[:200]})."
+
+
+def _auth_id_by_email(url: str, key: str, email: str):
+    """id da conta de login com este email (sem enviar email nenhum), ou None se não existir."""
+    status, body = _request("POST", f"{url}/auth/v1/admin/generate_link", key,
+                            json.dumps({"type": "magiclink", "email": email}).encode())
+    if status in (200, 201):
+        data = json.loads(body or b"{}")
+        return data.get("id") or (data.get("user") or {}).get("id")
+    return None
+
+
+def create_auth_user(email: str, password: str, full_name: str = None) -> str:
+    """Cria a conta de login (email já confirmado) com a palavra-passe indicada. Se já existir
+    uma conta com este email (ex: convite enviado antes), reaproveita-a e muda-lhe a palavra-passe.
+    Devolve o id da conta no Supabase."""
+    url, key = _config("A gestão de contas de acesso")
+    payload = {"email": email, "password": password, "email_confirm": True,
+               "user_metadata": {"full_name": full_name} if full_name else {}}
+    status, body = _request("POST", f"{url}/auth/v1/admin/users", key, json.dumps(payload).encode())
+    if status in (200, 201):
+        return json.loads(body)["id"]
+    text = body.decode(errors="ignore")
+    if status == 422 and ("already" in text.lower() or "registered" in text.lower() or "exists" in text.lower()):
+        existing = _auth_id_by_email(url, key, email)
+        if not existing:
+            raise StorageError("Já existe uma conta de login com este email, mas não foi possível encontrá-la.")
+        set_auth_password(existing, password)
+        return existing
+    raise StorageError(_password_error(status, text))
+
+
+def set_auth_password(supabase_user_id: str, password: str) -> None:
+    url, key = _config("A gestão de contas de acesso")
+    payload = json.dumps({"password": password, "email_confirm": True}).encode()
+    status, body = _request("PUT", f"{url}/auth/v1/admin/users/{supabase_user_id}", key, payload)
+    if status in (200, 201):
+        return
+    if status == 404:
+        raise StorageError("A conta de login já não existe no Supabase. Cria um novo acesso.")
+    raise StorageError(_password_error(status, body.decode(errors="ignore")))
+
+
+def delete_auth_user(supabase_user_id: str) -> None:
+    url, key = _config("A gestão de contas de acesso")
+    status, body = _request("DELETE", f"{url}/auth/v1/admin/users/{supabase_user_id}", key)
+    if status in (200, 204, 404):
+        return
+    raise StorageError(f"Não foi possível apagar a conta de login (erro {status}: {body.decode(errors='ignore')[:200]}).")
+
+
+def get_auth_user(supabase_user_id: str):
+    """Dados da conta de login (último acesso, etc.) ou None se não existir."""
+    url, key = _config("A gestão de contas de acesso")
+    status, body = _request("GET", f"{url}/auth/v1/admin/users/{supabase_user_id}", key)
+    if status == 200:
+        return json.loads(body or b"{}")
+    return None
+
+
 def invite_user(email: str, full_name: str = None, redirect_to: str = None) -> str:
     """Envia ao condómino o email de convite do Supabase (link para criar a palavra-passe).
     Se a pessoa já tiver conta de login, envia antes o email de 'definir nova palavra-passe'.

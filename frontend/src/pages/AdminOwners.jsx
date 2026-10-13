@@ -4,6 +4,7 @@ import { useCondo } from '../lib/CondoContext'
 import FilePicker from '../components/FilePicker'
 import Modal from '../components/Modal'
 import { OwnerInvoices } from './FractionAccount'
+import OwnerAccess from '../components/OwnerAccess'
 import { DOC_ACCEPT, checkDocFile, uploadDocFile } from '../lib/files'
 
 const EMPTY_PROFILE = {
@@ -97,6 +98,7 @@ export default function AdminOwners() {
   const [linkDrafts, setLinkDrafts] = useState([]) // frações do condómino em edição
   const [inviting, setInviting] = useState(null)
   const [invoicesOf, setInvoicesOf] = useState(null) // condómino cujas faturas estão abertas
+  const [accessOf, setAccessOf] = useState(null) // condómino cujo acesso (login) está aberto
 
   async function load() {
     if (!selectedCondo) return
@@ -350,7 +352,7 @@ export default function AdminOwners() {
                     ? 'Podes corrigir o email do convite.'
                     : o.has_login
                       ? 'Esta pessoa já tem conta: ao mudar o email, passa a entrar na app com o novo email.'
-                      : 'Ainda não criou conta: vai poder criá-la com este email.'} />
+                      : 'Ainda não tem acesso à aplicação: cria-o no botão "🔑 Acesso".'} />
 
                 {!o.is_pending && (
                   <div className="stack" style={{ gap: '.4rem' }}>
@@ -455,7 +457,7 @@ export default function AdminOwners() {
                     {o.full_name}{' '}
                     {o.is_pending && <span className="badge warn">convite pendente</span>}
                     {!o.is_pending && !o.is_active && <span className="badge danger">conta desativada</span>}
-                    {!o.is_pending && o.is_active && !o.has_login && <span className="badge">ainda não entrou na app</span>}
+                    {!o.is_pending && o.is_active && !o.has_login && <span className="badge">sem acesso à app</span>}
                   </h3>
                   <p className="hint" style={{ margin: '.2em 0', overflowWrap: 'anywhere' }}>
                     {[o.is_pending ? null : o.email, o.phone && `📱 ${o.phone}`, o.landline_phone && `☎️ ${o.landline_phone}`].filter(Boolean).join(' · ')}
@@ -504,6 +506,10 @@ export default function AdminOwners() {
                     </button>
                   )}
                   {!o.is_pending && (
+                    <button className="btn secondary small" onClick={() => setAccessOf(o)}
+                      title="Criar o acesso à aplicação, mudar a palavra-passe ou apagar o acesso">🔑 Acesso</button>
+                  )}
+                  {!o.is_pending && (
                     <button className="btn secondary small" onClick={() => setInvoicesOf(o)} title="Todas as quotas e faturas deste condómino, com PDF">Faturas</button>
                   )}
                   <button className="btn secondary small" onClick={() => startEdit(o)}>
@@ -521,6 +527,11 @@ export default function AdminOwners() {
         {owners.length > 0 && visible.length === 0 && <div className="empty">Nenhum condómino corresponde à pesquisa.</div>}
       </div>
       </>)}
+      {accessOf && (
+        <Modal title="Acesso à aplicação" onClose={() => setAccessOf(null)}>
+          <OwnerAccess condoId={selectedCondo.id} owner={accessOf} onChanged={load} />
+        </Modal>
+      )}
       {invoicesOf && (
         <Modal title={`Faturas de ${invoicesOf.full_name}`} wide="x" onClose={() => setInvoicesOf(null)}>
           <OwnerInvoices condoId={selectedCondo.id} owner={invoicesOf} />

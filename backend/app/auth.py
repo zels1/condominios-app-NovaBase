@@ -81,12 +81,24 @@ def _resolve_user(
             .first()
         )
     if user:
+        if user.revoked_auth_id and user.revoked_auth_id == supabase_user_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Este acesso foi apagado pela administração do condomínio.")
         user.supabase_user_id = supabase_user_id
     else:
-        # 2) Caso contrário cria o registo local como 'owner' por defeito.
-        #    Um admin tem de ser promovido manualmente a role=admin.
+        # 2) Não há registo com este email. As contas são criadas pela administração: só se
+        #    aceita quem tenha um convite pendente para uma fração (ou o primeiro utilizador
+        #    de uma instalação nova, que será o administrador).
+        invited = email and db.query(models.FractionOwner.id).filter(
+            func.lower(models.FractionOwner.invited_email) == email.lower(),
+            models.FractionOwner.user_id.is_(None)).first()
+        first_ever = db.query(models.User.id).first() is None
+        if not invited and not first_ever:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Esta conta não está registada na plataforma. Pede acesso à administração do teu condomínio.")
         user = models.User(
-            email=email,
+            email=email.lower() if email else email,
             full_name=payload.get("user_metadata", {}).get("full_name", email),
             supabase_user_id=supabase_user_id,
             role=models.UserRole.owner,

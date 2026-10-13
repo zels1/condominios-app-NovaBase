@@ -185,6 +185,10 @@ class OwnerDirectoryEntry(BaseModel):
     invite_error: Optional[str] = None
 
 
+class AccessPassword(BaseModel):
+    password: str = Field(min_length=8, max_length=72)
+
+
 class OwnerFractionAssign(BaseModel):
     """Associar um condómino já registado a (mais) uma fração, ou alterar a associação."""
     fraction_id: str

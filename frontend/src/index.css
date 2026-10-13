@@ -410,3 +410,7 @@ strong, b { font-weight: 600; }
 .owner-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .35rem 0 .2rem; }
 .owner-chip { background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: .25em .8em; font-size: .88rem; }
 .billing-choice { display: flex; flex-direction: column; gap: .35rem; margin-top: .5rem; padding: .7rem .9rem; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+
+/* Acesso do condómino */
+.access-status { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .7rem .9rem; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.password-shown { font-size: 1.05rem; padding: .25em .6em; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; letter-spacing: .04em; user-select: all; }
